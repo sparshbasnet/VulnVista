@@ -1,0 +1,85 @@
+# Core VulnVista app stack (postgres + backend + frontend).
+#
+# Attaches to the `vulnvista_net` network as `external: true` — this file does
+# not create it, so it doesn't fight lab/docker-compose.yml for ownership. Run
+# ./scripts/setup.sh (or `docker network create vulnvista_net`) once first.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vulnvista_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vulnvista}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-dev}
+      POSTGRES_DB: ${POSTGRES_DB:-vulnvista}
+      # initdb refuses to use a bind-mounted directory directly (any stray dotfile,
+      # like a git .gitkeep placeholder, makes it look "non-empty"), so point it at
+      # a subdirectory of the mount instead — the standard fix for bind-mounted PGDATA.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Bind-mounted to a host folder (not a Docker-managed volume) so the
+      # database survives `docker compose down`, restarts, and even a full
+      # Docker reinstall — the data lives at ./storage/postgres on the host.
+      - ${POSTGRES_DATA_DIR:-./storage/postgres}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vulnvista}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - vulnvista_net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vulnvista_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SECRET_KEY: ${SECRET_KEY:-change-me-generate-a-random-64-char-value}
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:5173}
+      BACKEND_STORAGE_DIR: /data/uploads
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vulnvista}:${POSTGRES_PASSWORD:-change-me-in-dev}@postgres:5432/${POSTGRES_DB:-vulnvista}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      # Live-reload source mount for development.
+      - ./backend/app:/app/app
+      - ./backend/tests:/app/tests
+      # Scan evidence / uploaded files persisted on the host, not in the container layer.
+      - ${BACKEND_STORAGE_DIR:-./storage/uploads}:/data/uploads
+    networks:
+      - vulnvista_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: vulnvista_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      # Live-reload source mount for development; node_modules stays in the container.
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+    networks:
+      - vulnvista_net
+
+networks:
+  vulnvista_net:
+    name: vulnvista_net
+    external: true
