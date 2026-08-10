@@ -1,0 +1,36 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Persistent data (bind-mounted, must survive container restarts)
+storage/**
+!storage/**/
+!storage/**/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+backend/.venv/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+
+# Docker
+*.pid
+
+# OS / editor
+.DS_Store
+*.swp
+
+# TLS test certs (generated, not committed)
+lab/tls-test-service/certs/*.pem
+lab/tls-test-service/certs/*.key
+lab/tls-test-service/certs/*.crt

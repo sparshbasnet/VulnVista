@@ -1,0 +1,38 @@
+# VulnVista lab targets — deliberately vulnerable applications only.
+#
+# Both this file and ../docker-compose.yml attach to the shared `vulnvista_net`
+# network as `external: true` — neither one creates it, to avoid the two
+# compose projects fighting over ownership of the same network. Run
+# ../scripts/setup.sh (or `docker network create vulnvista_net`) once before
+# starting either compose file.
+#
+# Usage (run from the repo root so the shared .env is picked up):
+#   docker compose --env-file .env -f lab/docker-compose.yml up -d
+#   docker compose --env-file .env -f lab/docker-compose.yml down
+
+services:
+  dvwa:
+    image: vulnerables/web-dvwa
+    container_name: vulnvista_dvwa
+    restart: unless-stopped
+    ports:
+      - "${DVWA_PORT:-8081}:80"
+    networks:
+      - vulnvista_net
+
+  juice-shop:
+    image: bkimminich/juice-shop
+    container_name: vulnvista_juice_shop
+    restart: unless-stopped
+    ports:
+      - "${JUICE_SHOP_PORT:-3000}:3000"
+    volumes:
+      # Persist challenge progress / seeded data on the host.
+      - ${JUICE_SHOP_DATA_DIR:-../storage/lab/juice-shop}:/juice_shop/data
+    networks:
+      - vulnvista_net
+
+networks:
+  vulnvista_net:
+    name: vulnvista_net
+    external: true
