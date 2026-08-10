@@ -79,6 +79,16 @@ services:
     networks:
       - vulnvista_net
 
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
 networks:
   vulnvista_net:
     name: vulnvista_net
