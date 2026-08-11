@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     backend_cors_origins: str = "http://localhost:5173"
     backend_storage_dir: str = "/data/uploads"
 
+    zap_api_url: str = "http://zap:8080"
+    zap_api_key: str = "vulnvista-dev-key"
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.backend_cors_origins.split(",") if origin.strip()]
