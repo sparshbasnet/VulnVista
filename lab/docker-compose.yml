@@ -20,6 +20,11 @@ services:
     networks:
       - vulnvista_net
 
+# To see if juice-shop is reachable from inside the ZAP container:
+#   docker compose -f tools/docker-compose.yml exec zap sh
+#   curl -s -o /dev/null -w "%{http_code}\n" http://juice-shop:3000  # should return 200 or 304
+# Or:
+#   docker compose -f tools/docker-compose.yml exec zap curl -s -o /dev/null -w "%{http_code}\n" http://juice-shop:3000
   juice-shop:
     image: bkimminich/juice-shop
     container_name: vulnvista_juice_shop

@@ -54,8 +54,10 @@ services:
       # Live-reload source mount for development.
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
+      - ./backend/scripts:/app/scripts
       # Scan evidence / uploaded files persisted on the host, not in the container layer.
       - ${BACKEND_STORAGE_DIR:-./storage/uploads}:/data/uploads
+      
     networks:
       - vulnvista_net
 
