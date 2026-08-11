@@ -1,6 +1,8 @@
-from zapv2 import ZAPv2
-from app.core.config import settings
 import time
+
+from zapv2 import ZAPv2
+
+from app.core.config import settings
 
 
 class ZAPClient:
