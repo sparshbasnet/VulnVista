@@ -10,8 +10,8 @@
 # starting either compose file.
 #
 # Usage (run from the repo root so the shared .env is picked up):
-#   docker compose --env-file .env -f lab/tools/docker-compose.yml up -d
-#   docker compose --env-file .env -f lab/tools/docker-compose.yml down
+#   docker compose --env-file .env -f tools/docker-compose.yml up -d
+#   docker compose --env-file .env -f tools/docker-compose.yml down
 
 services:
   zap:
