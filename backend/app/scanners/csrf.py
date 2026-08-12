@@ -54,9 +54,10 @@ class CSRFDetector(BaseDetector):
     async def check(self, context: ScanContext) -> DetectorResult:
         try:
             async with httpx.AsyncClient(
-                timeout=context.timeout_seconds,
-                follow_redirects=True,
-            ) as client:
+    timeout=context.timeout_seconds,
+    follow_redirects=True,
+    headers=context.extra.get("headers", {}),
+) as client:
                 response = await client.get(context.base_url)
 
         except httpx.HTTPError as exc:

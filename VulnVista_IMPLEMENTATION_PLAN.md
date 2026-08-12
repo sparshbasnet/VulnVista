@@ -320,7 +320,7 @@ A detector should return a common result structure.
   "confidence": "HIGH",
   "endpoint": "/vulnerabilities/sqli/",
   "parameter": "id",
-  "evidence": {},
+  "evidence": {},å
   "remediation": "...",
   "cwe": "CWE-89"
 }

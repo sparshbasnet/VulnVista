@@ -8,26 +8,51 @@ from app.api.deps import get_db
 from app.models.finding import Finding
 from app.models.scan import Scan
 from app.models.target import Target
+from app.scanners.detector_registry import get_detectors
 from app.schemas.finding import FindingRead
 from app.schemas.scan import ScanCreate, ScanRead
+from app.services.scan_orchestrator import run_scan
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 
 
 @router.post("", response_model=ScanRead, status_code=201)
-async def create_scan(payload: ScanCreate, db: AsyncSession = Depends(get_db)) -> Scan:
+async def create_scan(
+    payload: ScanCreate,
+    db: AsyncSession = Depends(get_db),
+) -> Scan:
     target = await db.get(Target, payload.target_id)
+
     if target is None:
         raise HTTPException(status_code=404, detail="Target not found")
+
     if not target.is_allowed:
-        raise HTTPException(status_code=403, detail="Target is not on the approved allowlist")
+        raise HTTPException(
+            status_code=403,
+            detail="Target is not on the approved allowlist",
+        )
+
+    if not target.base_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Target does not have a base URL",
+        )
 
     scan = Scan(**payload.model_dump())
     db.add(scan)
     await db.commit()
     await db.refresh(scan)
-    return scan
 
+    detectors = get_detectors()
+
+    await run_scan(
+        db=db,
+        scan=scan,
+        target=target,
+        detectors=detectors,
+    )
+
+    return scan
 
 @router.get("", response_model=list[ScanRead])
 async def list_scans(db: AsyncSession = Depends(get_db)) -> list[Scan]:

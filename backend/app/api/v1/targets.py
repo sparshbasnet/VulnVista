@@ -32,3 +32,21 @@ async def get_target(target_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -
     if target is None:
         raise HTTPException(status_code=404, detail="Target not found")
     return target
+
+
+@router.patch("/{target_id}/allow", response_model=TargetRead)
+async def allow_target(
+    target_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> Target:
+    target = await db.get(Target, target_id)
+
+    if target is None:
+        raise HTTPException(status_code=404, detail="Target not found")
+
+    target.is_allowed = True
+
+    await db.commit()
+    await db.refresh(target)
+
+    return target
