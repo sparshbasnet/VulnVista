@@ -51,7 +51,9 @@ async def run_scan(scan_id: uuid.UUID) -> None:
         scan.started_at = datetime.now(UTC)
         await db.commit()
 
-        context = ScanContext(target_id=str(target.id), base_url=target.base_url)
+        context = ScanContext(
+            target_id=str(target.id), base_url=target.base_url, extra=target.scan_config or {}
+        )
         detectors = get_detectors_for_profile(scan.scan_profile)
 
         errors = 0
