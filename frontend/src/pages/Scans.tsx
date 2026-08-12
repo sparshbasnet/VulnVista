@@ -21,9 +21,48 @@ interface Phase {
   state: PhaseState;
 }
 
+type ProfileId = "command_injection" | "weak_auth";
+interface ProfileConfig {
+  label: string;
+  targetType: string;
+  defaultUrl: string;
+  buttonLabel: string;
+  scanningLabel: string;
+  noFindingLabel: string;
+  help: string;
+}
+
+const PROFILES: Record<ProfileId, ProfileConfig> = {
+  command_injection: {
+    label: "Command Injection (DVWA)",
+    targetType: "dvwa",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for command injection",
+    scanningLabel: "Authenticating & injecting probes…",
+    noFindingLabel: "No command injection detected on this target",
+    help:
+      "Enter the target as the backend reaches it on the lab network — e.g. http://dvwa, not " +
+      "http://localhost:8081. The scanner logs into DVWA (admin / password), sets security to " +
+      "low, and confirms OS command injection with output-marker and time-based probes.",
+  },
+  weak_auth: {
+    label: "Weak Authentication (Juice Shop)",
+    targetType: "juice-shop",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan for weak authentication",
+    scanningLabel: "Probing authentication endpoints…",
+    noFindingLabel: "No weak authentication controls detected on this target",
+    help:
+      "Enter the target as the backend reaches it on the lab network — e.g. " +
+      "http://juice-shop:3000. The scanner checks the seeded admin account for username " +
+      "enumeration via the password-reset flow and for missing login rate limiting/lockout.",
+  },
+};
+
 export default function Scans() {
   const [scans, setScans] = useState<Scan[]>([]);
-  const [url, setUrl] = useState("http://dvwa");
+  const [profile, setProfile] = useState<ProfileId>("command_injection");
+  const [url, setUrl] = useState(PROFILES.command_injection.defaultUrl);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
@@ -40,6 +79,15 @@ export default function Scans() {
   }, []);
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  function selectProfile(next: ProfileId) {
+    // Only clobber the URL if it's still the previous profile's default —
+    // preserves whatever the user typed themselves.
+    if (url === PROFILES[profile].defaultUrl) {
+      setUrl(PROFILES[next].defaultUrl);
+    }
+    setProfile(next);
+  }
 
   async function startScan(event: FormEvent) {
     event.preventDefault();
@@ -66,11 +114,12 @@ export default function Scans() {
     };
 
     setPhases([]);
+    const cfg = PROFILES[profile];
     try {
       const p1 = begin(`Registering target ${url.trim()}…`);
       const target = await api.createTarget({
         name: name.trim() || url.trim(),
-        target_type: "dvwa",
+        target_type: cfg.targetType,
         base_url: url.trim(),
         environment: "lab",
       });
@@ -89,11 +138,11 @@ export default function Scans() {
       const p3 = begin("Launching scan…");
       let current = await api.createScan({
         target_id: target.id,
-        scan_profile: "command_injection",
+        scan_profile: profile,
       });
       finish(p3, "done", `Scan ${current.id.slice(0, 8)} launched`);
 
-      const p4 = begin("Authenticating & injecting probes…");
+      const p4 = begin(cfg.scanningLabel);
       const started = Date.now();
       let polls = 0;
       while (!TERMINAL.includes(current.status)) {
@@ -121,7 +170,7 @@ export default function Scans() {
           ? `${result.length} finding(s) recorded — see results below`
           : current.error_summary
             ? "No findings recorded"
-            : "No command injection detected on this target",
+            : cfg.noFindingLabel,
       );
       finish(p5, "done");
 
@@ -142,12 +191,23 @@ export default function Scans() {
         className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4"
       >
         <div className="flex flex-col gap-3 sm:flex-row">
+          <select
+            value={profile}
+            onChange={(e) => selectProfile(e.target.value as ProfileId)}
+            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500 sm:w-64"
+          >
+            {(Object.keys(PROFILES) as ProfileId[]).map((id) => (
+              <option key={id} value={id}>
+                {PROFILES[id].label}
+              </option>
+            ))}
+          </select>
           <input
             type="url"
             required
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="http://dvwa"
+            placeholder={PROFILES[profile].defaultUrl}
             className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
           />
           <input
@@ -162,16 +222,10 @@ export default function Scans() {
             disabled={busy}
             className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {busy ? "Scanning…" : "Scan for command injection"}
+            {busy ? "Scanning…" : PROFILES[profile].buttonLabel}
           </button>
         </div>
-        <p className="text-xs text-slate-500">
-          Enter the target as the <span className="text-slate-400">backend</span> reaches it on the
-          lab network — e.g. <code className="text-slate-400">http://dvwa</code>, not
-          <code className="text-slate-400"> http://localhost:8081</code>. The scanner logs into DVWA
-          (admin / password), sets security to low, and confirms OS command injection with
-          output-marker and time-based probes.
-        </p>
+        <p className="text-xs text-slate-500">{PROFILES[profile].help}</p>
 
         {(phases.length > 0 || error) && (
           <div className="space-y-2 rounded-md border border-slate-800 bg-slate-950/60 p-3 text-sm">

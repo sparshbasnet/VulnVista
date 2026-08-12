@@ -8,17 +8,19 @@ here.
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
 from app.scanners.command_injection import CommandInjectionDetector
+from app.scanners.weak_auth import WeakAuthDetector
 
 # detector_id -> singleton instance
 DETECTOR_REGISTRY: dict[str, BaseDetector] = {
     detector.detector_id: detector
-    for detector in (CommandInjectionDetector(),)
+    for detector in (CommandInjectionDetector(), WeakAuthDetector())
 }
 
 # scan_profile -> ordered detector_ids to run
 SCAN_PROFILES: dict[str, list[str]] = {
     "default": ["command_injection"],
     "command_injection": ["command_injection"],
+    "weak_auth": ["weak_auth"],
 }
 
 
