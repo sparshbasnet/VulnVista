@@ -1,11 +1,13 @@
 import uuid
 from urllib.parse import urlparse
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
+from app.core.config import get_settings
 from app.models.target import Target
 from app.schemas.target import TargetCreate, TargetRead
 
@@ -27,7 +29,7 @@ def _is_allowed(url: str | None) -> bool:
 
 @router.post("", response_model=TargetRead, status_code=201)
 async def create_target(payload: TargetCreate, db: AsyncSession = Depends(get_db)) -> Target:
-    target = Target(**payload.model_dump(), is_allowed=_is_allowed(payload.base_url))
+    target = Target(**payload.model_dump())
     db.add(target)
     await db.commit()
     await db.refresh(target)
