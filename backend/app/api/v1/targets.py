@@ -1,4 +1,5 @@
 import uuid
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -10,10 +11,23 @@ from app.schemas.target import TargetCreate, TargetRead
 
 router = APIRouter(prefix="/targets", tags=["targets"])
 
+# Hostnames of the isolated lab containers/services VulnVista is permitted to
+# scan (see README "Approved lab targets"). Anything else is rejected so a
+# target can never be pointed at a public/production host.
+_ALLOWED_LAB_HOSTS = {"dvwa", "juice-shop", "localhost", "127.0.0.1"}
+
+
+def _is_allowed(url: str | None) -> bool:
+    """Whether a target URL's host is on the approved lab allowlist."""
+    if not url:
+        return False
+    hostname = urlparse(url).hostname
+    return hostname is not None and hostname.lower() in _ALLOWED_LAB_HOSTS
+
 
 @router.post("", response_model=TargetRead, status_code=201)
 async def create_target(payload: TargetCreate, db: AsyncSession = Depends(get_db)) -> Target:
-    target = Target(**payload.model_dump())
+    target = Target(**payload.model_dump(), is_allowed=_is_allowed(payload.base_url))
     db.add(target)
     await db.commit()
     await db.refresh(target)
