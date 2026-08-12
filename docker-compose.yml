@@ -90,6 +90,11 @@ services:
       - "5050:80"
     depends_on:
       - postgres
+    # Required: without this, Compose puts pgadmin on the implicit `default`
+    # network while postgres is on vulnvista_net, and the `postgres` hostname
+    # fails to resolve ([Errno -3]) no matter which port you use.
+    networks:
+      - vulnvista_net
 
 networks:
   vulnvista_net:

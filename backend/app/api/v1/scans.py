@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,12 +10,17 @@ from app.models.scan import Scan
 from app.models.target import Target
 from app.schemas.finding import FindingRead
 from app.schemas.scan import ScanCreate, ScanRead
+from app.services.scan_runner import run_scan
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 
 
 @router.post("", response_model=ScanRead, status_code=201)
-async def create_scan(payload: ScanCreate, db: AsyncSession = Depends(get_db)) -> Scan:
+async def create_scan(
+    payload: ScanCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+) -> Scan:
     target = await db.get(Target, payload.target_id)
     if target is None:
         raise HTTPException(status_code=404, detail="Target not found")
@@ -26,6 +31,10 @@ async def create_scan(payload: ScanCreate, db: AsyncSession = Depends(get_db)) -
     db.add(scan)
     await db.commit()
     await db.refresh(scan)
+
+    # Detectors run asynchronously; the client polls GET /scans/{id} for status
+    # and GET /scans/{id}/findings for results.
+    background_tasks.add_task(run_scan, scan.id)
     return scan
 
 
