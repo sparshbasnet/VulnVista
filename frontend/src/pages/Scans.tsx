@@ -21,7 +21,7 @@ interface Phase {
   state: PhaseState;
 }
 
-type ProfileId = "command_injection" | "weak_auth";
+type ProfileId = "command_injection" | "weak_auth" | "sensitive_files";
 interface ProfileConfig {
   label: string;
   targetType: string;
@@ -57,6 +57,19 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "Enter the target as the backend reaches it on the lab network — e.g. " +
       "http://juice-shop:3000. The scanner checks the seeded admin account for username " +
       "enumeration via the password-reset flow and for missing login rate limiting/lockout.",
+  },
+  sensitive_files: {
+    label: "Sensitive File Exposure (Juice Shop)",
+    targetType: "juice-shop",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan for exposed sensitive files",
+    scanningLabel: "Checking for exposed backups, config, and metadata…",
+    noFindingLabel: "No sensitive files exposed on this target",
+    help:
+      "Enter the target as the backend reaches it on the lab network — e.g. " +
+      "http://juice-shop:3000. The scanner checks for directly retrievable backup files, " +
+      "configuration files, repository metadata, source maps, and internal documents, " +
+      "confirming each against a baseline so the app's fallback page isn't mistaken for a hit.",
   },
 };
 
