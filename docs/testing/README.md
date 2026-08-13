@@ -4,57 +4,57 @@ This folder documents the lab applications used for VulnVista testing, which bro
 
 ## What is in the lab
 
-| App | Purpose | Browser URL |
-| --- | --- | --- |
-| VulnVista frontend | Main dashboard UI | http://localhost:5173 |
-| VulnVista backend | API and scan engine | http://localhost:8000/api/health |
-| PostgreSQL | Database backing the app | Not opened in a browser; the default host port is 5432 |
-| pgAdmin | Optional database admin UI | http://localhost:5050 |
-| DVWA | Deliberately vulnerable web app | http://localhost:8081 |
-| OWASP Juice Shop | Deliberately vulnerable web app | http://localhost:3000 |
-| TLS test service | Weak TLS test target | https://localhost:8443 |
-| Metasploitable2 | Multi-service vulnerable target | Browser access depends on the service; see the port mapping below |
+| App                | Purpose                         | Browser URL                                                       |
+| ------------------ | ------------------------------- | ----------------------------------------------------------------- |
+| VulnVista frontend | Main dashboard UI               | http://localhost:5173                                             |
+| VulnVista backend  | API and scan engine             | http://localhost:8000/api/health                                  |
+| PostgreSQL         | Database backing the app        | Not opened in a browser; the default host port is 5432            |
+| pgAdmin            | Optional database admin UI      | http://localhost:5050                                             |
+| DVWA               | Deliberately vulnerable web app | http://localhost:8081                                             |
+| OWASP Juice Shop   | Deliberately vulnerable web app | http://localhost:3000                                             |
+| TLS test service   | Weak TLS test target            | https://localhost:8443                                            |
+| Metasploitable2    | Multi-service vulnerable target | Browser access depends on the service; see the port mapping below |
 
 ## Port mapping
 
 ### Main application stack
 
-| Service | Host port | Notes |
-| --- | --- | --- |
-| Frontend | 5173 | Opens the React dashboard in the browser |
-| Backend | 8000 | Use the health endpoint in a browser: /api/health |
-| PostgreSQL | 5432 | Used by the backend; not a browser target |
-| pgAdmin | 5050 | Optional UI for checking database state |
+| Service    | Host port | Notes                                             |
+| ---------- | --------- | ------------------------------------------------- |
+| Frontend   | 5173      | Opens the React dashboard in the browser          |
+| Backend    | 8000      | Use the health endpoint in a browser: /api/health |
+| PostgreSQL | 5432      | Used by the backend; not a browser target         |
+| pgAdmin    | 5050      | Optional UI for checking database state           |
 
 ### Lab targets
 
-| Service | Host port | Notes |
-| --- | --- | --- |
-| DVWA | 8081 | Web app target for command injection and other browser-based tests |
-| Juice Shop | 3000 | Web app target for weak auth and sensitive-file checks |
-| TLS test service | 8443 | Used for weak TLS testing |
-| Metasploitable2 FTP | 10021 | Service exposed for service discovery tests |
-| Metasploitable2 SSH | 10022 | Service exposed for service discovery tests |
-| Metasploitable2 Telnet | 10023 | Service exposed for service discovery tests |
-| Metasploitable2 SMTP | 10025 | Service exposed for service discovery tests |
-| Metasploitable2 DNS | 10053 | May not start fully in Docker |
-| Metasploitable2 HTTP | 10080 | Web service target |
-| Metasploitable2 RPCbind | 10111 | Service discovery target |
-| Metasploitable2 NetBIOS/SMB | 10139 / 10445 | Service discovery target |
-| Metasploitable2 Rexec / Rlogin / Rsh | 10512 / 10513 / 10514 | Service discovery target |
-| Metasploitable2 Java RMI | 11099 | Service discovery target |
-| Metasploitable2 Ingreslock | 11524 | Backdoor service target |
-| Metasploitable2 NFS | 12049 | May not start fully in Docker |
-| Metasploitable2 FTP (ProFTPD) | 12121 | Service discovery target |
-| Metasploitable2 MySQL | 13306 | Service discovery target |
-| Metasploitable2 distccd | 13632 | Service discovery target |
-| Metasploitable2 PostgreSQL | 15432 | Service discovery target |
-| Metasploitable2 VNC | 15900 | Service discovery target |
-| Metasploitable2 X11 | 16000 | Service discovery target |
-| Metasploitable2 vsftpd backdoor | 16200 | Service discovery target |
-| Metasploitable2 IRC | 16667 | Service discovery target |
-| Metasploitable2 AJP13 | 18009 | Service discovery target |
-| Metasploitable2 Tomcat HTTP | 18180 | Service discovery target |
+| Service                              | Host port             | Notes                                                              |
+| ------------------------------------ | --------------------- | ------------------------------------------------------------------ |
+| DVWA                                 | 8081                  | Web app target for command injection and other browser-based tests |
+| Juice Shop                           | 3000                  | Web app target for weak auth and sensitive-file checks             |
+| TLS test service                     | 8443                  | Used for weak TLS testing                                          |
+| Metasploitable2 FTP                  | 10021                 | Service exposed for service discovery tests                        |
+| Metasploitable2 SSH                  | 10022                 | Service exposed for service discovery tests                        |
+| Metasploitable2 Telnet               | 10023                 | Service exposed for service discovery tests                        |
+| Metasploitable2 SMTP                 | 10025                 | Service exposed for service discovery tests                        |
+| Metasploitable2 DNS                  | 10053                 | May not start fully in Docker                                      |
+| Metasploitable2 HTTP                 | 10080                 | Web service target                                                 |
+| Metasploitable2 RPCbind              | 10111                 | Service discovery target                                           |
+| Metasploitable2 NetBIOS/SMB          | 10139 / 10445         | Service discovery target                                           |
+| Metasploitable2 Rexec / Rlogin / Rsh | 10512 / 10513 / 10514 | Service discovery target                                           |
+| Metasploitable2 Java RMI             | 11099                 | Service discovery target                                           |
+| Metasploitable2 Ingreslock           | 11524                 | Backdoor service target                                            |
+| Metasploitable2 NFS                  | 12049                 | May not start fully in Docker                                      |
+| Metasploitable2 FTP (ProFTPD)        | 12121                 | Service discovery target                                           |
+| Metasploitable2 MySQL                | 13306                 | Service discovery target                                           |
+| Metasploitable2 distccd              | 13632                 | Service discovery target                                           |
+| Metasploitable2 PostgreSQL           | 15432                 | Service discovery target                                           |
+| Metasploitable2 VNC                  | 15900                 | Service discovery target                                           |
+| Metasploitable2 X11                  | 16000                 | Service discovery target                                           |
+| Metasploitable2 vsftpd backdoor      | 16200                 | Service discovery target                                           |
+| Metasploitable2 IRC                  | 16667                 | Service discovery target                                           |
+| Metasploitable2 AJP13                | 18009                 | Service discovery target                                           |
+| Metasploitable2 Tomcat HTTP          | 18180                 | Service discovery target                                           |
 
 ## How to test each app
 
