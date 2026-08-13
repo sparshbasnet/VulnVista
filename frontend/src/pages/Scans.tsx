@@ -5,7 +5,10 @@ import type { Finding, Scan } from "../types";
 
 const TERMINAL: Scan["status"][] = ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"];
 const POLL_INTERVAL_MS = 1500;
-const MAX_POLLS = 120; // ~3 minutes before we stop waiting
+// ~20 minutes before we stop waiting. vulnerable_services runs a real nmap scan (up to
+// a 15-minute internal ceiling against a busy target) plus per-service NVD/searchsploit
+// lookups afterward — the other profiles finish in seconds regardless of this ceiling.
+const MAX_POLLS = 800;
 
 const severityColor: Record<string, string> = {
   CRITICAL: "bg-red-500/20 text-red-300",
@@ -21,7 +24,7 @@ interface Phase {
   state: PhaseState;
 }
 
-type ProfileId = "command_injection" | "weak_auth" | "sensitive_files";
+type ProfileId = "command_injection" | "weak_auth" | "sensitive_files" | "vulnerable_services";
 interface ProfileConfig {
   label: string;
   targetType: string;
@@ -70,6 +73,20 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "http://juice-shop:3000. The scanner checks for directly retrievable backup files, " +
       "configuration files, repository metadata, source maps, and internal documents, " +
       "confirming each against a baseline so the app's fallback page isn't mistaken for a hit.",
+  },
+  vulnerable_services: {
+    label: "Vulnerable Services (Metasploitable2)",
+    targetType: "metasploitable2",
+    defaultUrl: "http://metasploitable2",
+    buttonLabel: "Scan for vulnerable services",
+    scanningLabel: "Discovering open ports and fingerprinting services (nmap)…",
+    noFindingLabel: "No known-vulnerable services or insecure protocols detected on this target",
+    help:
+      "Not limited to a single web app — enter any host the backend can reach (e.g. " +
+      "http://metasploitable2). Runs an nmap port scan + version fingerprint, then matches " +
+      "each service against known CVEs and insecure-by-design protocols (telnet, rsh/rlogin, " +
+      "unauthenticated VNC). Only version fingerprints are used as proof — nothing is ever " +
+      "exploited on the target. Can take a couple of minutes since it's a real port scan.",
   },
 };
 

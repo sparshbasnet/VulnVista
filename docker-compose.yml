@@ -48,6 +48,7 @@ services:
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:5173}
       BACKEND_STORAGE_DIR: /data/uploads
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vulnvista}:${POSTGRES_PASSWORD:-change-me-in-dev}@postgres:5432/${POSTGRES_DB:-vulnvista}
+      NVD_API_KEY: ${NVD_API_KEY:-}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:

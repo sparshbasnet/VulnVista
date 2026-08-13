@@ -9,12 +9,18 @@ here.
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
 from app.scanners.command_injection import CommandInjectionDetector
 from app.scanners.sensitive_files import SensitiveFilesDetector
+from app.scanners.vulnerable_services import VulnerableServicesDetector
 from app.scanners.weak_auth import WeakAuthDetector
 
 # detector_id -> singleton instance
 DETECTOR_REGISTRY: dict[str, BaseDetector] = {
     detector.detector_id: detector
-    for detector in (CommandInjectionDetector(), WeakAuthDetector(), SensitiveFilesDetector())
+    for detector in (
+        CommandInjectionDetector(),
+        WeakAuthDetector(),
+        SensitiveFilesDetector(),
+        VulnerableServicesDetector(),
+    )
 }
 
 # scan_profile -> ordered detector_ids to run
@@ -23,6 +29,7 @@ SCAN_PROFILES: dict[str, list[str]] = {
     "command_injection": ["command_injection"],
     "weak_auth": ["weak_auth"],
     "sensitive_files": ["sensitive_files"],
+    "vulnerable_services": ["vulnerable_services"],
 }
 
 

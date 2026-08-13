@@ -18,12 +18,18 @@ class Settings(BaseSettings):
     zap_api_url: str = "http://zap:8080"
     zap_api_key: str = "vulnvista-dev-key"
 
+    # Optional — raises the NVD CVE API's rate limit from 5 to 50 requests per
+    # rolling 30s window. Free signup at https://nvd.nist.gov/developers/request-an-api-key.
+    # Unset means the vulnerable_services detector paces itself to the unauthenticated limit.
+    nvd_api_key: str | None = None
+
     # Hosts that are auto-approved for scanning with no user acknowledgment —
     # the bundled lab containers. Any other host can still be scanned, but only
     # once the requester explicitly confirms they're authorized to test it
     # (see api/v1/targets.py). This is a convenience trust list, not a hard cap.
     lab_allowed_hosts: str = (
-        "dvwa,juice-shop,vulnvista_dvwa,vulnvista_juice_shop,localhost,127.0.0.1"
+        "dvwa,juice-shop,vulnvista_dvwa,vulnvista_juice_shop,"
+        "metasploitable2,vulnvista_metasploitable2,localhost,127.0.0.1"
     )
 
     # Hosts that can never be scanned, acknowledgment or not — cloud metadata
