@@ -18,20 +18,29 @@ class Settings(BaseSettings):
     zap_api_url: str = "http://zap:8080"
     zap_api_key: str = "vulnvista-dev-key"
 
-    # Default-deny allowlist: a target is only auto-approved for scanning when
-    # its host is one of these known lab hosts. This keeps the platform from
-    # ever pointing its active detectors at something it wasn't meant to.
+    # Hosts that are auto-approved for scanning with no user acknowledgment —
+    # the bundled lab containers. Any other host can still be scanned, but only
+    # once the requester explicitly confirms they're authorized to test it
+    # (see api/v1/targets.py). This is a convenience trust list, not a hard cap.
     lab_allowed_hosts: str = (
         "dvwa,juice-shop,vulnvista_dvwa,vulnvista_juice_shop,localhost,127.0.0.1"
     )
+
+    # Hosts that can never be scanned, acknowledgment or not — cloud metadata
+    # endpoints, whose only realistic use from a server-side HTTP client is SSRF.
+    blocked_hosts: str = "169.254.169.254,fd00:ec2::254"
 
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.backend_cors_origins.split(",") if origin.strip()]
 
     @property
-    def allowed_hosts(self) -> list[str]:
+    def trusted_hosts(self) -> list[str]:
         return [host.strip().lower() for host in self.lab_allowed_hosts.split(",") if host.strip()]
+
+    @property
+    def blocklisted_hosts(self) -> list[str]:
+        return [host.strip().lower() for host in self.blocked_hosts.split(",") if host.strip()]
 
 
 @lru_cache

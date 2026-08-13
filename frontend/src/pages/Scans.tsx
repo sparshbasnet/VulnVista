@@ -21,10 +21,88 @@ interface Phase {
   state: PhaseState;
 }
 
+type ProfileId = "command_injection" | "weak_auth";
+interface ProfileConfig {
+  label: string;
+  targetType: string;
+  defaultUrl: string;
+  buttonLabel: string;
+  scanningLabel: string;
+  noFindingLabel: string;
+  help: string;
+}
+
+const PROFILES: Record<ProfileId, ProfileConfig> = {
+  command_injection: {
+    label: "Command Injection",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for command injection",
+    scanningLabel: "Discovering injection points & probing…",
+    noFindingLabel: "No command injection detected on this target",
+    help:
+      "Works against any target: paste its URL and the scanner auto-discovers a form field " +
+      "or query parameter to probe, then confirms OS command injection with output-marker " +
+      "and time-based signals. Use Advanced below for a login, a session cookie, or an exact " +
+      "parameter to target. http://dvwa is a bundled lab target requiring no setup.",
+  },
+  weak_auth: {
+    label: "Weak Authentication (Juice Shop)",
+    targetType: "juice-shop",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan for weak authentication",
+    scanningLabel: "Probing authentication endpoints…",
+    noFindingLabel: "No weak authentication controls detected on this target",
+    help:
+      "Enter the target as the backend reaches it on the lab network — e.g. " +
+      "http://juice-shop:3000. The scanner checks the seeded admin account for username " +
+      "enumeration via the password-reset flow and for missing login rate limiting/lockout.",
+  },
+};
+
+const TRUSTED_HOSTS = new Set([
+  "dvwa",
+  "juice-shop",
+  "vulnvista_dvwa",
+  "vulnvista_juice_shop",
+  "localhost",
+  "127.0.0.1",
+]);
+
+// Client-side mirror of the backend's trust list, for UX only (showing/hiding
+// the authorization checkbox) — the backend is the actual enforcement point.
+function isTrustedHost(rawUrl: string): boolean {
+  try {
+    return TRUSTED_HOSTS.has(new URL(rawUrl).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function parseCookieHeader(raw: string): Record<string, string> {
+  const cookies: Record<string, string> = {};
+  for (const part of raw.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx === -1) continue;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (key) cookies[key] = value;
+  }
+  return cookies;
+}
+
 export default function Scans() {
   const [scans, setScans] = useState<Scan[]>([]);
-  const [url, setUrl] = useState("http://dvwa");
+  const [profile, setProfile] = useState<ProfileId>("command_injection");
+  const [url, setUrl] = useState(PROFILES.command_injection.defaultUrl);
   const [name, setName] = useState("");
+  const [authorized, setAuthorized] = useState(false);
+  const [advUsername, setAdvUsername] = useState("");
+  const [advPassword, setAdvPassword] = useState("");
+  const [advLoginPath, setAdvLoginPath] = useState("");
+  const [advCookie, setAdvCookie] = useState("");
+  const [advParameter, setAdvParameter] = useState("");
+  const [advPath, setAdvPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +118,15 @@ export default function Scans() {
   }, []);
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  function selectProfile(next: ProfileId) {
+    // Only clobber the URL if it's still the previous profile's default —
+    // preserves whatever the user typed themselves.
+    if (url === PROFILES[profile].defaultUrl) {
+      setUrl(PROFILES[next].defaultUrl);
+    }
+    setProfile(next);
+  }
 
   async function startScan(event: FormEvent) {
     event.preventDefault();
@@ -66,34 +153,53 @@ export default function Scans() {
     };
 
     setPhases([]);
+    const cfg = PROFILES[profile];
+    const trusted = isTrustedHost(url);
     try {
+      const scanConfig: Record<string, unknown> = {};
+      if (advUsername.trim() && advPassword.trim()) {
+        scanConfig.username = advUsername.trim();
+        scanConfig.password = advPassword.trim();
+        if (advLoginPath.trim()) scanConfig.login_path = advLoginPath.trim();
+      }
+      if (advCookie.trim()) scanConfig.cookies = parseCookieHeader(advCookie.trim());
+      if (advParameter.trim()) scanConfig.parameter = advParameter.trim();
+      if (advPath.trim()) {
+        if (/^https?:\/\//i.test(advPath.trim())) scanConfig.injection_url = advPath.trim();
+        else scanConfig.exec_path = advPath.trim();
+      }
+
       const p1 = begin(`Registering target ${url.trim()}…`);
       const target = await api.createTarget({
         name: name.trim() || url.trim(),
-        target_type: "dvwa",
+        target_type: cfg.targetType,
         base_url: url.trim(),
         environment: "lab",
+        authorization_confirmed: authorized,
+        ...(Object.keys(scanConfig).length > 0 ? { scan_config: scanConfig } : {}),
       });
       finish(p1, "done", `Target registered: ${target.name}`);
 
-      const p2 = begin("Checking scan allowlist…");
+      const p2 = begin("Checking authorization…");
       if (!target.is_allowed) {
-        finish(p2, "error", `${url} is not on the lab allowlist`);
+        finish(p2, "error", `${url} is not approved for scanning`);
         throw new Error(
-          `${url} is not on the lab allowlist, so it can't be scanned. Use an approved ` +
-            `lab host as the backend sees it (e.g. http://dvwa).`,
+          trusted
+            ? `${url} could not be approved automatically — please try again.`
+            : `${url} isn't a recognized lab host and no authorization was confirmed. Check ` +
+              `"I have authorization to test this target" above and try again.`,
         );
       }
-      finish(p2, "done", "Approved by allowlist ✓");
+      finish(p2, "done", trusted ? "Trusted lab host ✓" : "Authorized by you ✓");
 
       const p3 = begin("Launching scan…");
       let current = await api.createScan({
         target_id: target.id,
-        scan_profile: "command_injection",
+        scan_profile: profile,
       });
       finish(p3, "done", `Scan ${current.id.slice(0, 8)} launched`);
 
-      const p4 = begin("Authenticating & injecting probes…");
+      const p4 = begin(cfg.scanningLabel);
       const started = Date.now();
       let polls = 0;
       while (!TERMINAL.includes(current.status)) {
@@ -121,7 +227,7 @@ export default function Scans() {
           ? `${result.length} finding(s) recorded — see results below`
           : current.error_summary
             ? "No findings recorded"
-            : "No command injection detected on this target",
+            : cfg.noFindingLabel,
       );
       finish(p5, "done");
 
@@ -142,12 +248,23 @@ export default function Scans() {
         className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4"
       >
         <div className="flex flex-col gap-3 sm:flex-row">
+          <select
+            value={profile}
+            onChange={(e) => selectProfile(e.target.value as ProfileId)}
+            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500 sm:w-64"
+          >
+            {(Object.keys(PROFILES) as ProfileId[]).map((id) => (
+              <option key={id} value={id}>
+                {PROFILES[id].label}
+              </option>
+            ))}
+          </select>
           <input
             type="url"
             required
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="http://dvwa"
+            placeholder={PROFILES[profile].defaultUrl}
             className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
           />
           <input
@@ -159,19 +276,82 @@ export default function Scans() {
           />
           <button
             type="submit"
-            disabled={busy}
+            disabled={busy || (!isTrustedHost(url) && !authorized)}
             className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {busy ? "Scanning…" : "Scan for command injection"}
+            {busy ? "Scanning…" : PROFILES[profile].buttonLabel}
           </button>
         </div>
-        <p className="text-xs text-slate-500">
-          Enter the target as the <span className="text-slate-400">backend</span> reaches it on the
-          lab network — e.g. <code className="text-slate-400">http://dvwa</code>, not
-          <code className="text-slate-400"> http://localhost:8081</code>. The scanner logs into DVWA
-          (admin / password), sets security to low, and confirms OS command injection with
-          output-marker and time-based probes.
-        </p>
+        <p className="text-xs text-slate-500">{PROFILES[profile].help}</p>
+
+        {!isTrustedHost(url) && (
+          <label className="flex items-center gap-2 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={authorized}
+              onChange={(e) => setAuthorized(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-950"
+            />
+            I have authorization to test this target for security vulnerabilities.
+          </label>
+        )}
+
+        <details className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-400">
+          <summary className="cursor-pointer select-none text-slate-300">Advanced (optional)</summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {profile === "command_injection" && (
+              <>
+                <input
+                  type="text"
+                  value={advUsername}
+                  onChange={(e) => setAdvUsername(e.target.value)}
+                  placeholder="Login username"
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
+                />
+                <input
+                  type="password"
+                  value={advPassword}
+                  onChange={(e) => setAdvPassword(e.target.value)}
+                  placeholder="Login password"
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
+                />
+                <input
+                  type="text"
+                  value={advLoginPath}
+                  onChange={(e) => setAdvLoginPath(e.target.value)}
+                  placeholder="Login path (e.g. /login.php)"
+                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
+                />
+              </>
+            )}
+            <input
+              type="text"
+              value={advCookie}
+              onChange={(e) => setAdvCookie(e.target.value)}
+              placeholder="Session cookie (name=value; name2=value2)"
+              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500 sm:col-span-2"
+            />
+            <input
+              type="text"
+              value={advParameter}
+              onChange={(e) => setAdvParameter(e.target.value)}
+              placeholder="Exact parameter name (e.g. ip)"
+              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
+            />
+            <input
+              type="text"
+              value={advPath}
+              onChange={(e) => setAdvPath(e.target.value)}
+              placeholder="Exact injection path or full URL"
+              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
+            />
+          </div>
+          <p className="mt-2">
+            Leave everything blank to auto-discover an injectable form field or query
+            parameter on the target page. A session cookie is the most reliable way to scan a
+            site behind a login that isn't a simple HTML form.
+          </p>
+        </details>
 
         {(phases.length > 0 || error) && (
           <div className="space-y-2 rounded-md border border-slate-800 bg-slate-950/60 p-3 text-sm">

@@ -1,8 +1,8 @@
 """OS command-injection detector.
 
-The detection *technique* here is generic and evidence-based — it never assumes
-a vulnerability exists, it proves one by observing the target actually execute
-an injected shell command. Two independent signals are used:
+The detection *technique* is generic and evidence-based — it never assumes a
+vulnerability exists, it proves one by observing the target actually execute an
+injected shell command. Two independent signals are used:
 
   1. Output-based: inject ``; echo <random-marker>`` and look for the marker
      reflected in the response body. A marker we generated at runtime can only
@@ -11,11 +11,14 @@ an injected shell command. Two independent signals are used:
      against a benign baseline. A delay of ~N seconds that the baseline does
      not have means the shell ran our ``sleep``.
 
-The DVWA-specific bits (login flow, the ``exec`` endpoint, the ``ip`` field)
-live in overridable defaults, not in the detection logic, so the same detector
-can be pointed at another target by passing overrides through
-``ScanContext.extra``. A ZAP-backed detector can be added later alongside this
-one without touching this file.
+The injection point itself is generic too: given no override, the detector
+fetches the target page, parses its HTML forms (and any query-string
+parameters already on the pasted URL) with a small stdlib-only parser, and
+probes each candidate text field/parameter in turn. A known lab host (DVWA)
+gets a preset pointing straight at its exercise instead of discovery, and any
+host can be pointed at an explicit parameter/path/login via
+``ScanContext.extra`` (populated from ``Target.scan_config``), which always
+wins over both the generic defaults and the lab preset.
 """
 
 from __future__ import annotations
@@ -24,8 +27,9 @@ import re
 import secrets
 import time
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import httpx
 
@@ -33,31 +37,47 @@ from app.scanners.base import BaseDetector, DetectorResult, ScanContext
 
 # Tuning constants for the time-based signal.
 SLEEP_SECONDS = 5
-# The benign baseline for DVWA already runs `ping -c 4`, which costs a few
-# seconds, so we compare *deltas* rather than absolute time. Require most of the
-# injected sleep to show up before we trust the blind signal.
+# Some targets already run a slow benign command (e.g. DVWA's baseline runs
+# `ping -c 4`), so we compare *deltas* rather than absolute time. Require most
+# of the injected sleep to show up before we trust the blind signal.
 TIME_THRESHOLD_MS = 4000
 
-# Lab defaults target DVWA's "Command Injection" exercise at the low security
-# level. Everything here is overridable via ScanContext.extra.
-DEFAULTS: dict[str, Any] = {
-    "login_path": "/login.php",
-    "exec_path": "/vulnerabilities/exec/",
-    "parameter": "ip",
-    "submit_field": "Submit",
-    "submit_value": "Submit",
-    "username": "admin",
-    "password": "password",
-    "security": "low",
+# Target-agnostic tuning only. Everything target-specific lives in
+# LAB_PRESETS or is supplied by the caller via ScanContext.extra.
+GENERIC_DEFAULTS: dict[str, Any] = {
     "benign_value": "127.0.0.1",
     "separator": ";",
     "request_timeout": 20.0,
+    "max_candidates": 5,
 }
 
-_USER_TOKEN_RE = re.compile(
-    r"name=['\"]user_token['\"]\s+value=['\"]([0-9a-fA-F]+)['\"]"
-)
+# Convenience presets for the bundled lab containers, keyed by hostname, so
+# the DVWA quick-start keeps working with zero configuration. Anything not
+# listed here falls back to auto-discovery.
+LAB_PRESETS: dict[str, dict[str, Any]] = {
+    "dvwa": {
+        "login_path": "/login.php",
+        "login_submit_field": "Login",
+        "login_submit_value": "Login",
+        "exec_path": "/vulnerabilities/exec/",
+        "parameter": "ip",
+        "submit_field": "Submit",
+        "submit_value": "Submit",
+        "username": "admin",
+        "password": "password",
+        "post_login_cookies": {"security": "low"},
+    },
+}
+LAB_PRESETS["vulnvista_dvwa"] = LAB_PRESETS["dvwa"]
+
 _PRE_BLOCK_RE = re.compile(r"<pre[^>]*>(.*?)</pre>", re.IGNORECASE | re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>")
+
+# Text-like input types (and textareas) are candidate injection points.
+# Everything else (password/hidden/submit/checkbox/radio/file/...) is either
+# excluded outright or carried through unchanged as a fixed field.
+_CANDIDATE_TYPES = {"text", "search", "url", "tel", "email", "number", "textarea"}
+_SKIP_FIXED_TYPES = {"password", "checkbox", "radio", "file", "image", "reset"}
 
 
 class DetectorError(Exception):
@@ -65,19 +85,155 @@ class DetectorError(Exception):
     that is surfaced to the user (distinct from a raw transport error)."""
 
 
-def extract_user_token(html: str) -> str | None:
-    """Pull DVWA's anti-CSRF ``user_token`` out of a form, if present."""
-    match = _USER_TOKEN_RE.search(html)
-    return match.group(1) if match else None
+@dataclass
+class FormField:
+    name: str
+    type: str
+    value: str = ""
 
 
-def extract_command_output(html: str) -> str | None:
-    """Return the text of the first ``<pre>`` block — where DVWA renders the
-    output of the executed command."""
+@dataclass
+class FormSpec:
+    action: str
+    method: str
+    fields: list[FormField]
+
+
+class _FormHTMLParser(HTMLParser):
+    """Collects <form> elements (action, method, input/textarea/select fields)."""
+
+    def __init__(self, page_url: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.page_url = page_url
+        self.forms: list[FormSpec] = []
+        self._in_form = False
+        self._action = ""
+        self._method = "GET"
+        self._fields: list[FormField] = []
+        self._select_name: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attrs_d = {k: (v or "") for k, v in attrs}
+        if tag == "form":
+            self._in_form = True
+            self._action = urljoin(self.page_url, attrs_d.get("action") or self.page_url)
+            self._method = (attrs_d.get("method") or "GET").upper()
+            self._fields = []
+        elif tag == "input" and self._in_form:
+            name = attrs_d.get("name")
+            if name:
+                field_type = (attrs_d.get("type") or "text").lower()
+                value = attrs_d.get("value", "")
+                self._fields.append(FormField(name=name, type=field_type, value=value))
+        elif tag == "textarea" and self._in_form:
+            name = attrs_d.get("name")
+            if name:
+                self._fields.append(FormField(name=name, type="textarea"))
+        elif tag == "select" and self._in_form:
+            self._select_name = attrs_d.get("name") or None
+            if self._select_name:
+                self._fields.append(FormField(name=self._select_name, type="select"))
+        elif tag == "option" and self._select_name:
+            value = attrs_d.get("value")
+            last = self._fields[-1] if self._fields else None
+            if value and last is not None and last.name == self._select_name and not last.value:
+                last.value = value
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "form" and self._in_form:
+            self._in_form = False
+            form = FormSpec(action=self._action, method=self._method, fields=self._fields)
+            self.forms.append(form)
+            self._fields = []
+        elif tag == "select":
+            self._select_name = None
+
+
+def parse_forms(html: str, page_url: str) -> list[FormSpec]:
+    """Parse every <form> on a page into (action, method, fields), resolving
+    relative actions against ``page_url``. Stdlib-only — no HTML dependency."""
+    parser = _FormHTMLParser(page_url)
+    parser.feed(html)
+    return parser.forms
+
+
+def extract_evidence_snippet(html: str, marker: str) -> str | None:
+    """Return readable evidence around the injected marker: the first <pre>
+    block if the target renders command output that way (DVWA does), else a
+    stripped window of body text around the marker's position — works
+    regardless of how an arbitrary target formats its output."""
     match = _PRE_BLOCK_RE.search(html)
-    if not match:
+    if match:
+        return _TAG_RE.sub("", match.group(1)).strip()
+    idx = html.find(marker)
+    if idx == -1:
         return None
-    return re.sub(r"<[^>]+>", "", match.group(1)).strip()
+    window = html[max(0, idx - 100) : idx + len(marker) + 100]
+    return _TAG_RE.sub(" ", window).strip()
+
+
+@dataclass
+class Candidate:
+    """One injectable field this detector will probe: submit ``param`` inside
+    ``fixed_fields`` (the form/query's other fields, held at their default or
+    benign values) to ``url`` via ``method``."""
+
+    method: str
+    url: str
+    param: str
+    fixed_fields: dict[str, str]
+
+
+def _candidates_from_query(target_url: str) -> list[Candidate]:
+    """If the pasted target URL already has a query string (e.g.
+    ``?ip=1.1.1.1``), treat each param as a high-priority GET candidate."""
+    parsed = urlparse(target_url)
+    if not parsed.query:
+        return []
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    path_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+    return [
+        Candidate(
+            method="GET",
+            url=path_url,
+            param=name,
+            fixed_fields={k: v[0] for k, v in params.items() if k != name},
+        )
+        for name in params
+    ]
+
+
+def _candidates_from_form(form: FormSpec) -> list[Candidate]:
+    injectable = [f for f in form.fields if f.type in _CANDIDATE_TYPES]
+    candidates = []
+    for target in injectable:
+        fixed = {
+            f.name: f.value
+            for f in form.fields
+            if f is not target and f.type not in _SKIP_FIXED_TYPES
+        }
+        candidates.append(
+            Candidate(method=form.method, url=form.action, param=target.name, fixed_fields=fixed)
+        )
+    return candidates
+
+
+def _explicit_candidate(base: str, cfg: dict[str, Any]) -> Candidate | None:
+    """Build the single targeted candidate when the caller (a lab preset or an
+    explicit ScanContext.extra override) names an exact parameter/path."""
+    if "parameter" not in cfg:
+        return None
+    if "injection_url" in cfg:
+        url = cfg["injection_url"]
+    elif "exec_path" in cfg:
+        url = f"{base}{cfg['exec_path']}"
+    else:
+        return None
+    fixed = {}
+    if cfg.get("submit_field"):
+        fixed[cfg["submit_field"]] = cfg.get("submit_value", "")
+    method = cfg.get("method", "POST")
+    return Candidate(method=method, url=url, param=cfg["parameter"], fixed_fields=fixed)
 
 
 @dataclass
@@ -108,95 +264,84 @@ class CommandInjectionDetector(BaseDetector):
     detector_id = "command_injection"
     name = "OS Command Injection"
     vulnerability_type = "command_injection"
-    supported_targets = ["dvwa", "webapp"]
 
     async def check(self, context: ScanContext) -> DetectorResult:
-        cfg = {**DEFAULTS, **context.extra}
-        # Normalise to scheme://host — DVWA's login/exec paths hang off the site
-        # root, so we ignore any path the user pasted (e.g. .../vulnerabilities/exec).
         parsed = urlparse(context.base_url)
-        base = f"{parsed.scheme}://{parsed.netloc}"
         host = parsed.hostname or ""
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        cfg = {**GENERIC_DEFAULTS, **LAB_PRESETS.get(host, {}), **context.extra}
+        discovery_path = cfg.get("discovery_path") or parsed.path or "/"
 
         try:
             async with httpx.AsyncClient(
-                follow_redirects=True, timeout=cfg["request_timeout"]
+                follow_redirects=True,
+                timeout=cfg["request_timeout"],
+                cookies=cfg.get("cookies", {}),
+                headers=cfg.get("headers", {}),
             ) as client:
-                await self._authenticate(client, base, host, cfg)
+                if cfg.get("login_path") and cfg.get("username") and cfg.get("password"):
+                    await self._authenticate(client, base, host, cfg)
 
-                exec_url = f"{base}{cfg['exec_path']}"
-                page = await client.get(exec_url)
-                page.raise_for_status()
-                if cfg["login_path"] in str(page.url):
-                    raise DetectorError(
-                        "Redirected to the login page when opening the command-injection "
-                        "page — the session is not authenticated. Verify credentials and "
-                        "that the target is DVWA."
+                explicit = _explicit_candidate(base, cfg)
+                if explicit is not None:
+                    candidates = [explicit]
+                    source = "explicit configuration"
+                else:
+                    candidates = await self._discover_candidates(
+                        client, context, cfg, base, discovery_path
                     )
-                exec_token = extract_user_token(page.text)
+                    source = "auto-discovered"
+                    if not candidates:
+                        raise DetectorError(
+                            f"No form fields or query parameters were found at "
+                            f"{base}{discovery_path} to test for command injection. Provide "
+                            "an explicit 'parameter' and 'exec_path'/'injection_url' override "
+                            "in the target's scan configuration if the injectable field isn't "
+                            "reachable from there."
+                        )
 
-                benign = cfg["benign_value"]
-                sep = cfg["separator"]
+                candidate = evidence = decision = None
+                for raw_candidate in candidates[: cfg["max_candidates"]]:
+                    candidate = await self._prime_candidate(client, raw_candidate, cfg)
+                    decision, evidence = await self._probe(client, candidate, cfg)
+                    if decision.detected:
+                        break
 
-                # 1. Baseline (benign input) — gives us the "normal" response time.
-                _, baseline_ms = await self._submit(client, exec_url, cfg, benign, exec_token)
-
-                # 2. Output-based probe with a runtime-random marker.
-                marker = f"CMDINJ-{secrets.token_hex(4)}"
-                out_body, marker_ms = await self._submit(
-                    client, exec_url, cfg, f"{benign}{sep} echo {marker}", exec_token
-                )
-                output = extract_command_output(out_body) or ""
-                marker_reflected = marker in out_body
-
-                # 3. Blind time-based probe.
-                _, blind_ms = await self._submit(
-                    client, exec_url, cfg, f"{benign}{sep} sleep {SLEEP_SECONDS}", exec_token
-                )
-                time_delta_ms = blind_ms - baseline_ms
-
-            decision = classify(marker_reflected, time_delta_ms, TIME_THRESHOLD_MS)
-            return self._result(context, cfg, decision, {
-                "marker": marker,
-                "marker_reflected": marker_reflected,
-                "output_snippet": output[:500],
-                "baseline_ms": round(baseline_ms, 1),
-                "marker_probe_ms": round(marker_ms, 1),
-                "blind_probe_ms": round(blind_ms, 1),
-                "time_delta_ms": round(time_delta_ms, 1),
-                "time_threshold_ms": TIME_THRESHOLD_MS,
-                "payloads": {
-                    "baseline": benign,
-                    "output": f"{benign}{sep} echo {marker}",
-                    "blind": f"{benign}{sep} sleep {SLEEP_SECONDS}",
-                },
-                "auth": f"form login as '{cfg['username']}' at security level '{cfg['security']}'",
-            })
+                assert candidate is not None and decision is not None and evidence is not None
+                evidence["candidates_probed"] = min(len(candidates), cfg["max_candidates"])
+                evidence["candidate_source"] = source
+                return self._result(context, candidate, decision, evidence)
         except DetectorError as exc:
-            return self._error_result(context, cfg, str(exc))
+            return self._error_result(context, str(exc))
         except httpx.HTTPError as exc:
             return self._error_result(
-                context, cfg, f"Could not reach the target ({type(exc).__name__}: {exc})."
+                context, f"Could not reach the target ({type(exc).__name__}: {exc})."
             )
 
     async def _authenticate(
         self, client: httpx.AsyncClient, base: str, host: str, cfg: dict[str, Any]
     ) -> None:
-        """Log into DVWA and pin the security level cookie for the session."""
-        login_url = f"{base}{cfg['login_path']}"
+        """Best-effort form login: GET the login page, resubmit its hidden
+        fields unchanged (carries any CSRF token regardless of its field name)
+        plus the given username/password. Only ever runs when the caller
+        (a lab preset or an explicit override) supplied login_path/username/password."""
+        login_url = urljoin(base + "/", cfg["login_path"])
         page = await client.get(login_url)
         page.raise_for_status()
 
-        data = {
-            "username": cfg["username"],
-            "password": cfg["password"],
-            "Login": "Login",
-        }
-        token = extract_user_token(page.text)
-        if token:
-            data["user_token"] = token
+        forms = parse_forms(page.text, str(page.url))
+        login_form = forms[0] if forms else None
 
-        resp = await client.post(login_url, data=data)
+        data: dict[str, str] = {}
+        if login_form:
+            data.update({f.name: f.value for f in login_form.fields if f.type == "hidden"})
+        data[cfg.get("username_field", "username")] = cfg["username"]
+        data[cfg.get("password_field", "password")] = cfg["password"]
+        if cfg.get("login_submit_field"):
+            data[cfg["login_submit_field"]] = cfg.get("login_submit_value", "")
+
+        post_url = login_form.action if login_form else login_url
+        resp = await client.post(post_url, data=data)
         final_url = str(resp.url)
 
         # DVWA redirects every request to setup.php until its database exists.
@@ -208,27 +353,101 @@ class CommandInjectionDetector(BaseDetector):
             )
         if cfg["login_path"] in final_url or "login failed" in resp.text.lower():
             raise DetectorError(
-                f"Login failed for user '{cfg['username']}'. Check the credentials "
-                "(DVWA's default is admin / password)."
+                f"Login failed for user '{cfg['username']}' at {login_url}. Check the credentials."
             )
 
-        # DVWA reads the security level from this cookie on every request.
-        client.cookies.set("security", cfg["security"], domain=host, path="/")
+        for name, value in cfg.get("post_login_cookies", {}).items():
+            client.cookies.set(name, value, domain=host, path="/")
 
-    async def _submit(
+    async def _discover_candidates(
         self,
         client: httpx.AsyncClient,
-        exec_url: str,
+        context: ScanContext,
         cfg: dict[str, Any],
-        payload: str,
-        token: str | None,
+        base: str,
+        discovery_path: str,
+    ) -> list[Candidate]:
+        candidates = _candidates_from_query(context.base_url)
+        discovery_url = urljoin(base + "/", discovery_path)
+        try:
+            page = await client.get(discovery_url)
+            page.raise_for_status()
+        except httpx.HTTPError:
+            pass
+        else:
+            for form in parse_forms(page.text, str(page.url)):
+                candidates.extend(_candidates_from_form(form))
+        return candidates
+
+    async def _prime_candidate(
+        self, client: httpx.AsyncClient, candidate: Candidate, cfg: dict[str, Any]
+    ) -> Candidate:
+        """GET the candidate's own page first so any hidden/CSRF fields on its
+        form are captured and carried through on the probe requests. Skipped
+        for GET candidates (no form submission, nothing to carry)."""
+        if candidate.method != "POST":
+            return candidate
+
+        page = await client.get(candidate.url)
+        page.raise_for_status()
+        if cfg.get("login_path") and cfg["login_path"] in str(page.url):
+            raise DetectorError(
+                "Redirected to the login page when opening the target form — the session "
+                "is not authenticated. Verify the credentials and login path."
+            )
+
+        forms = parse_forms(page.text, str(page.url))
+        by_action = next((f for f in forms if f.action == candidate.url), None)
+        matched = by_action or (forms[0] if forms else None)
+        hidden = {f.name: f.value for f in matched.fields if f.type == "hidden"} if matched else {}
+        merged_fields = {**hidden, **candidate.fixed_fields}
+        return Candidate(candidate.method, candidate.url, candidate.param, merged_fields)
+
+    async def _probe(
+        self, client: httpx.AsyncClient, candidate: Candidate, cfg: dict[str, Any]
+    ) -> tuple[Decision, dict[str, Any]]:
+        """Run the baseline / marker-echo / blind-timing probes against one candidate."""
+        benign = cfg["benign_value"]
+        sep = cfg["separator"]
+
+        _, baseline_ms = await self._submit(client, candidate, benign)
+
+        marker = f"CMDINJ-{secrets.token_hex(4)}"
+        out_body, marker_ms = await self._submit(client, candidate, f"{benign}{sep} echo {marker}")
+        output = extract_evidence_snippet(out_body, marker) or ""
+        marker_reflected = marker in out_body
+
+        _, blind_ms = await self._submit(client, candidate, f"{benign}{sep} sleep {SLEEP_SECONDS}")
+        time_delta_ms = blind_ms - baseline_ms
+
+        decision = classify(marker_reflected, time_delta_ms, TIME_THRESHOLD_MS)
+        evidence = {
+            "marker": marker,
+            "marker_reflected": marker_reflected,
+            "output_snippet": output[:500],
+            "baseline_ms": round(baseline_ms, 1),
+            "marker_probe_ms": round(marker_ms, 1),
+            "blind_probe_ms": round(blind_ms, 1),
+            "time_delta_ms": round(time_delta_ms, 1),
+            "time_threshold_ms": TIME_THRESHOLD_MS,
+            "payloads": {
+                "baseline": benign,
+                "output": f"{benign}{sep} echo {marker}",
+                "blind": f"{benign}{sep} sleep {SLEEP_SECONDS}",
+            },
+        }
+        return decision, evidence
+
+    async def _submit(
+        self, client: httpx.AsyncClient, candidate: Candidate, payload: str
     ) -> tuple[str, float]:
-        """POST one payload to the vulnerable parameter, returning (body, elapsed_ms)."""
-        data = {cfg["parameter"]: payload, cfg["submit_field"]: cfg["submit_value"]}
-        if token:
-            data["user_token"] = token
+        """Submit one payload into the candidate's parameter, returning (body, elapsed_ms)."""
+        data = {**candidate.fixed_fields, candidate.param: payload}
         start = time.perf_counter()
-        resp = await client.post(exec_url, data=data)
+        if candidate.method == "GET":
+            resp = await client.get(candidate.url, params=data)
+        else:
+            resp = await client.post(candidate.url, data=data)
         elapsed_ms = (time.perf_counter() - start) * 1000
         resp.raise_for_status()
         return resp.text, elapsed_ms
@@ -236,13 +455,13 @@ class CommandInjectionDetector(BaseDetector):
     def _result(
         self,
         context: ScanContext,
-        cfg: dict[str, Any],
+        candidate: Candidate,
         decision: Decision,
         evidence: dict[str, Any],
     ) -> DetectorResult:
-        endpoint = f"{context.base_url.rstrip('/')}{cfg['exec_path']}"
         summary = (
-            f"{decision.reason}. "
+            f"{decision.reason} (probed {evidence['candidates_probed']} candidate field(s), "
+            f"{evidence['candidate_source']}). "
             f"baseline={evidence['baseline_ms']}ms, blind={evidence['blind_probe_ms']}ms "
             f"(Δ{evidence['time_delta_ms']}ms), marker_reflected={evidence['marker_reflected']}."
         )
@@ -253,8 +472,8 @@ class CommandInjectionDetector(BaseDetector):
             validation_status=decision.validation_status,
             severity="CRITICAL" if decision.detected else "INFO",
             confidence=decision.confidence,
-            endpoint=endpoint,
-            parameter=cfg["parameter"],
+            endpoint=candidate.url,
+            parameter=candidate.param,
             description=(
                 "The target executes attacker-controlled input as an OS shell "
                 "command. An injected command's output was reflected in the "
@@ -273,9 +492,7 @@ class CommandInjectionDetector(BaseDetector):
             owasp_category="A03:2021 - Injection",
         )
 
-    def _error_result(
-        self, context: ScanContext, cfg: dict[str, Any], message: str
-    ) -> DetectorResult:
+    def _error_result(self, context: ScanContext, message: str) -> DetectorResult:
         return DetectorResult(
             detector=self.detector_id,
             vulnerability=self.name,
@@ -283,8 +500,8 @@ class CommandInjectionDetector(BaseDetector):
             validation_status="ERROR",
             severity="INFO",
             confidence="LOW",
-            endpoint=f"{context.base_url.rstrip('/')}{cfg['exec_path']}",
-            parameter=cfg["parameter"],
+            endpoint=context.base_url,
+            parameter=None,
             description="Detector could not complete against the target.",
             evidence_summary=f"Scan error: {message}",
             evidence={"error": message},

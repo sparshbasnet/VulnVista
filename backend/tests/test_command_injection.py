@@ -2,27 +2,56 @@ from app.scanners import get_detectors_for_profile
 from app.scanners.command_injection import (
     TIME_THRESHOLD_MS,
     classify,
-    extract_command_output,
-    extract_user_token,
+    extract_evidence_snippet,
+    parse_forms,
 )
 
 
-def test_extract_user_token_present() -> None:
-    html = "<input type='hidden' name='user_token' value='abc123def456' />"
-    assert extract_user_token(html) == "abc123def456"
+def test_parse_forms_collects_action_method_and_fields() -> None:
+    html = """
+    <form action="/vulnerabilities/exec/" method="POST">
+      <input type="hidden" name="user_token" value="abc123def456" />
+      <input type="text" name="ip" value="127.0.0.1" />
+      <input type="password" name="unused_password" />
+      <input type="submit" name="Submit" value="Submit" />
+    </form>
+    """
+    forms = parse_forms(html, "http://dvwa/vulnerabilities/exec/")
+    assert len(forms) == 1
+    form = forms[0]
+    assert form.action == "http://dvwa/vulnerabilities/exec/"
+    assert form.method == "POST"
+    fields_by_name = {f.name: f for f in form.fields}
+    assert fields_by_name["user_token"].type == "hidden"
+    assert fields_by_name["user_token"].value == "abc123def456"
+    assert fields_by_name["ip"].type == "text"
+    assert fields_by_name["unused_password"].type == "password"
 
 
-def test_extract_user_token_absent() -> None:
-    assert extract_user_token("<form></form>") is None
+def test_parse_forms_resolves_relative_action() -> None:
+    html = '<form action="login.php" method="GET"><input name="q" /></form>'
+    forms = parse_forms(html, "http://example.com/app/index.php")
+    assert forms[0].action == "http://example.com/app/login.php"
 
 
-def test_extract_command_output_strips_markup() -> None:
+def test_parse_forms_no_forms() -> None:
+    assert parse_forms("<div>no forms here</div>", "http://example.com") == []
+
+
+def test_extract_evidence_snippet_prefers_pre_block() -> None:
     html = "<pre>PING 127.0.0.1\nCMDINJ-deadbeef</pre>"
-    assert extract_command_output(html) == "PING 127.0.0.1\nCMDINJ-deadbeef"
+    assert extract_evidence_snippet(html, "CMDINJ-deadbeef") == "PING 127.0.0.1\nCMDINJ-deadbeef"
 
 
-def test_extract_command_output_none() -> None:
-    assert extract_command_output("<div>no pre here</div>") is None
+def test_extract_evidence_snippet_falls_back_to_marker_window() -> None:
+    html = "<div class='result'>Output: CMDINJ-deadbeef ok</div>"
+    snippet = extract_evidence_snippet(html, "CMDINJ-deadbeef")
+    assert snippet is not None
+    assert "CMDINJ-deadbeef" in snippet
+
+
+def test_extract_evidence_snippet_marker_absent() -> None:
+    assert extract_evidence_snippet("<div>nothing to see</div>", "CMDINJ-deadbeef") is None
 
 
 def test_classify_marker_reflected_is_confirmed() -> None:

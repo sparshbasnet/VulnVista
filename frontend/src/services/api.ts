@@ -1,4 +1,4 @@
-import type { Finding, Scan, Target } from "../types";
+import type { Finding, Scan, Target, TargetCreatePayload } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
 
@@ -16,7 +16,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<{ status: string; environment: string }>("/health"),
   listTargets: () => request<Target[]>("/targets"),
-  createTarget: (payload: Partial<Target>) =>
+  createTarget: (payload: TargetCreatePayload) =>
     request<Target>("/targets", { method: "POST", body: JSON.stringify(payload) }),
   listScans: () => request<Scan[]>("/scans"),
   getScan: (id: string) => request<Scan>(`/scans/${id}`),
