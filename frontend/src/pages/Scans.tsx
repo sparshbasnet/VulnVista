@@ -1,5 +1,9 @@
+
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import FindingCard from "../components/FindingCard";
+import PageHeader from "../components/PageHeader";
+import { useAppData } from "../hooks/useAppData";
 import { api } from "../services/api";
 import type { Finding, Scan } from "../types";
 
@@ -10,20 +14,11 @@ const POLL_INTERVAL_MS = 1500;
 // lookups afterward — the other profiles finish in seconds regardless of this ceiling.
 const MAX_POLLS = 800;
 
-const severityColor: Record<string, string> = {
-  CRITICAL: "bg-red-500/20 text-red-300",
-  HIGH: "bg-orange-500/20 text-orange-300",
-  MEDIUM: "bg-amber-500/20 text-amber-300",
-  LOW: "bg-slate-500/20 text-slate-300",
-  INFO: "bg-slate-700/40 text-slate-300",
-};
-
 type PhaseState = "active" | "done" | "error";
 interface Phase {
   label: string;
   state: PhaseState;
 }
-
 type ProfileId =
   | "command_injection"
   | "weak_auth"
@@ -146,6 +141,7 @@ function parseCookieHeader(raw: string): Record<string, string> {
 }
 
 export default function Scans() {
+  const { refresh } = useAppData();
   const [scans, setScans] = useState<Scan[]>([]);
   const [profile, setProfile] = useState<ProfileId>("command_injection");
   const [url, setUrl] = useState(PROFILES.command_injection.defaultUrl);
@@ -286,6 +282,7 @@ export default function Scans() {
       finish(p5, "done");
 
       api.listScans().then(setScans).catch(() => undefined);
+      void refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -293,211 +290,243 @@ export default function Scans() {
     }
   }
 
+  const activeScans = scans.filter((scan) => scan.status === "QUEUED" || scan.status === "RUNNING").length;
+
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Scans</h1>
+    <div className="min-h-screen bg-[#f7f6f4]">
+      <PageHeader
+        eyebrow="Scanner control"
+        title="Run security scans"
+        description="Select a detector, confirm the authorized target, and follow each phase from registration to evidence capture."
+        right={
+          <>
+            <div className="px-4 py-1 text-right">
+              <p className="vv-label">Active</p>
+              <p className="mt-1 text-sm font-black text-[#f0321d]">{activeScans}</p>
+            </div>
+            <div className="px-4 py-1 text-right">
+              <p className="vv-label">Total runs</p>
+              <p className="mt-1 text-sm font-black">{scans.length}</p>
+            </div>
+          </>
+        }
+      />
 
-      <form
-        onSubmit={startScan}
-        className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4"
-      >
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <select
-            value={profile}
-            onChange={(e) => selectProfile(e.target.value as ProfileId)}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500 sm:w-64"
-          >
-            {(Object.keys(PROFILES) as ProfileId[]).map((id) => (
-              <option key={id} value={id}>
-                {PROFILES[id].label}
-              </option>
-            ))}
-          </select>
-          <input
-            type="url"
-            required
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder={PROFILES[profile].defaultUrl}
-            className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
-          />
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Name (optional)"
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500 sm:w-56"
-          />
-          <button
-            type="submit"
-            disabled={busy || (!isTrustedHost(url) && !authorized)}
-            className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy ? "Scanning…" : PROFILES[profile].buttonLabel}
-          </button>
-        </div>
-        <p className="text-xs text-slate-500">{PROFILES[profile].help}</p>
-
-        {!isTrustedHost(url) && (
-          <label className="flex items-center gap-2 text-xs text-slate-300">
-            <input
-              type="checkbox"
-              checked={authorized}
-              onChange={(e) => setAuthorized(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-950"
-            />
-            I have authorization to test this target for security vulnerabilities.
-          </label>
-        )}
-
-        <details className="rounded-md border border-slate-800 bg-slate-950/40 p-3 text-xs text-slate-400">
-          <summary className="cursor-pointer select-none text-slate-300">Advanced (optional)</summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {profile === "command_injection" && (
-              <>
-                <input
-                  type="text"
-                  value={advUsername}
-                  onChange={(e) => setAdvUsername(e.target.value)}
-                  placeholder="Login username"
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
-                />
-                <input
-                  type="password"
-                  value={advPassword}
-                  onChange={(e) => setAdvPassword(e.target.value)}
-                  placeholder="Login password"
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
-                />
-                <input
-                  type="text"
-                  value={advLoginPath}
-                  onChange={(e) => setAdvLoginPath(e.target.value)}
-                  placeholder="Login path (e.g. /login.php)"
-                  className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
-                />
-              </>
-            )}
-            <input
-              type="text"
-              value={advCookie}
-              onChange={(e) => setAdvCookie(e.target.value)}
-              placeholder="Session cookie (name=value; name2=value2)"
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500 sm:col-span-2"
-            />
-            <input
-              type="text"
-              value={advParameter}
-              onChange={(e) => setAdvParameter(e.target.value)}
-              placeholder="Exact parameter name (e.g. ip)"
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
-            />
-            <input
-              type="text"
-              value={advPath}
-              onChange={(e) => setAdvPath(e.target.value)}
-              placeholder="Exact injection path or full URL"
-              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-sky-500"
-            />
+      <section className="border-b border-[#aaa6a1] p-4 sm:p-5 lg:p-6">
+        <form onSubmit={startScan} className="border border-[#8f8b87] bg-[#f7f6f4]">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#aaa6a1] bg-[#efedea] p-4">
+            <div>
+              <p className="vv-kicker">New authorized run</p>
+              <h2 className="mt-1 text-lg font-black tracking-[-0.03em]">{PROFILES[profile].label}</h2>
+            </div>
+            <span className="bg-[#171616] px-2.5 py-1.5 font-mono text-[9px] font-bold uppercase text-white">
+              detector / {profile}
+            </span>
           </div>
-          <p className="mt-2">
-            Leave everything blank to auto-discover an injectable form field or query
-            parameter on the target page. A session cookie is the most reliable way to scan a
-            site behind a login that isn't a simple HTML form.
-          </p>
-        </details>
 
-        {(phases.length > 0 || error) && (
-          <div className="space-y-2 rounded-md border border-slate-800 bg-slate-950/60 p-3 text-sm">
-            {phases.map((p, i) => (
-              <div key={i} className="flex items-center gap-2">
-                {p.state === "active" && (
-                  <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-slate-600 border-t-sky-400" />
-                )}
-                {p.state === "done" && <span className="shrink-0 text-emerald-400">✓</span>}
-                {p.state === "error" && <span className="shrink-0 text-red-400">✗</span>}
-                <span
-                  className={
-                    p.state === "error"
-                      ? "text-red-400"
-                      : p.state === "active"
-                        ? "text-sky-300"
-                        : "text-slate-300"
-                  }
+          <div className="grid lg:grid-cols-[280px_minmax(0,1fr)]">
+            <div className="border-b border-[#aaa6a1] p-4 lg:border-r lg:border-b-0">
+              <label>
+                <span className="vv-label">Detector profile</span>
+                <select
+                  value={profile}
+                  onChange={(event) => selectProfile(event.target.value as ProfileId)}
+                  className="vv-input mt-2 font-bold"
                 >
-                  {p.label}
-                </span>
+                  {(Object.keys(PROFILES) as ProfileId[]).map((id) => (
+                    <option key={id} value={id}>{PROFILES[id].label}</option>
+                  ))}
+                </select>
+              </label>
+              <p className="mt-3 text-[10px] leading-relaxed text-[#676360]">{PROFILES[profile].help}</p>
+              <div className="mt-5 border-l-2 border-[#f0321d] pl-3">
+                <p className="text-[9px] font-black uppercase tracking-[0.08em]">Safe scanning boundary</p>
+                <p className="mt-1 text-[9px] leading-relaxed text-[#676360]">
+                  Bundled lab hosts are trusted automatically. Every other host requires your explicit authorization.
+                </p>
               </div>
-            ))}
-            {error && <p className="pt-1 text-red-400">⚠ {error}</p>}
+            </div>
+
+            <div className="space-y-4 p-4 sm:p-5">
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_240px]">
+                <label>
+                  <span className="vv-label">Target URL</span>
+                  <input
+                    type="url"
+                    required
+                    value={url}
+                    onChange={(event) => setUrl(event.target.value)}
+                    placeholder={PROFILES[profile].defaultUrl}
+                    className="vv-input mt-2 font-mono"
+                  />
+                </label>
+                <label>
+                  <span className="vv-label">Target name · optional</span>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="e.g. DVWA lab"
+                    className="vv-input mt-2"
+                  />
+                </label>
+              </div>
+
+              {!isTrustedHost(url) && (
+                <label className="flex items-start gap-3 border border-[#f0a39a] bg-[#fff0ed] p-3 text-[10px] leading-relaxed text-[#76180e]">
+                  <input
+                    type="checkbox"
+                    checked={authorized}
+                    onChange={(event) => setAuthorized(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-[#f0321d]"
+                  />
+                  <span>
+                    <strong className="block text-[9px] uppercase tracking-wide">Authorization required</strong>
+                    I have permission to test this target for security vulnerabilities.
+                  </span>
+                </label>
+              )}
+
+              <details className="border border-[#aaa6a1] bg-[#efedea]">
+                <summary className="flex min-h-11 items-center justify-between px-3 text-[10px] font-black uppercase tracking-[0.08em]">
+                  Advanced probe configuration
+                  <span className="text-[#f0321d]">＋</span>
+                </summary>
+                <div className="grid gap-3 border-t border-[#aaa6a1] p-3 sm:grid-cols-2">
+                  {profile === "command_injection" && (
+                    <>
+                      <input type="text" value={advUsername} onChange={(event) => setAdvUsername(event.target.value)} placeholder="Login username" className="vv-input" />
+                      <input type="password" value={advPassword} onChange={(event) => setAdvPassword(event.target.value)} placeholder="Login password" className="vv-input" />
+                      <input type="text" value={advLoginPath} onChange={(event) => setAdvLoginPath(event.target.value)} placeholder="Login path (e.g. /login.php)" className="vv-input sm:col-span-2" />
+                    </>
+                  )}
+                  <input type="text" value={advCookie} onChange={(event) => setAdvCookie(event.target.value)} placeholder="Session cookie (name=value; name2=value2)" className="vv-input sm:col-span-2" />
+                  <input type="text" value={advParameter} onChange={(event) => setAdvParameter(event.target.value)} placeholder="Exact parameter name (e.g. ip)" className="vv-input" />
+                  <input type="text" value={advPath} onChange={(event) => setAdvPath(event.target.value)} placeholder="Exact injection path or full URL" className="vv-input" />
+                  <p className="text-[9px] leading-relaxed text-[#676360] sm:col-span-2">
+                    Leave these blank for automatic discovery. Session cookies are the most reliable option for targets behind non-standard login flows.
+                  </p>
+                </div>
+              </details>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d0ccc7] pt-4">
+                <p className="text-[9px] font-bold uppercase tracking-wide text-[#676360]">
+                  Output: finding record + structured evidence
+                </p>
+                <button
+                  type="submit"
+                  disabled={busy || (!isTrustedHost(url) && !authorized)}
+                  className="vv-button-primary min-w-[190px]"
+                >
+                  {busy ? "Scan in progress…" : PROFILES[profile].buttonLabel}
+                </button>
+              </div>
+            </div>
           </div>
-        )}
-      </form>
+
+          {(phases.length > 0 || error) && (
+            <div className="border-t border-[#8f8b87] bg-[#201f1e] p-4 text-[#f3f0ed]">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-[9px] font-black uppercase tracking-[0.1em] text-[#ff8c7c]">Run console</p>
+                <span className="font-mono text-[9px] text-[#aaa6a1]">{phases.length} phases recorded</span>
+              </div>
+              <div className="mt-3 space-y-2">
+                {phases.map((phase, index) => (
+                  <div key={index} className="grid grid-cols-[18px_minmax(0,1fr)] items-start gap-2 font-mono text-[10px]">
+                    <span
+                      className={
+                        phase.state === "active"
+                          ? "mt-0.5 h-3 w-3 animate-pulse border border-[#ff8c7c] bg-[#f0321d]"
+                          : phase.state === "done"
+                            ? "text-emerald-400"
+                            : "text-[#ff8c7c]"
+                      }
+                    >
+                      {phase.state === "done" ? "✓" : phase.state === "error" ? "×" : ""}
+                    </span>
+                    <span className={phase.state === "error" ? "text-[#ff8c7c]" : phase.state === "active" ? "text-white" : "text-[#cfcbc7]"}>
+                      {phase.label}
+                    </span>
+                  </div>
+                ))}
+                {error && <p className="border-l-2 border-[#f0321d] pl-3 font-mono text-[10px] text-[#ff8c7c]">{error}</p>}
+              </div>
+            </div>
+          )}
+        </form>
+      </section>
 
       {findings && findings.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-lg font-medium">Scan results</h2>
-          {findings.map((f) => (
-            <div key={f.id} className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`rounded px-2 py-0.5 text-xs ${severityColor[f.severity] ?? "bg-slate-700/40 text-slate-300"}`}
-                >
-                  {f.severity}
-                </span>
-                <span className="font-medium">{f.vulnerability_name}</span>
-                <span className="text-xs text-slate-500">
-                  {f.cwe} · {f.owasp_category} · {f.validation_status}
-                </span>
-              </div>
-              {f.description && <p className="mt-2 text-sm text-slate-300">{f.description}</p>}
-              {f.evidence_summary && (
-                <p className="mt-1 font-mono text-xs text-slate-400">{f.evidence_summary}</p>
-              )}
-              {f.affected_endpoint && (
-                <p className="mt-1 text-xs text-slate-500">
-                  {f.affected_endpoint} (parameter: {f.parameter ?? "—"})
-                </p>
-              )}
+        <section className="border-b border-[#aaa6a1] p-4 sm:p-5 lg:p-6">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="vv-kicker">Latest run</p>
+              <h2 className="mt-1 text-lg font-black tracking-[-0.03em]">Captured findings</h2>
             </div>
-          ))}
-        </div>
+            <span className="text-[10px] font-black uppercase tracking-wide text-[#f0321d]">{findings.length} observed</span>
+          </div>
+          <div className="space-y-2">
+            {findings.map((finding) => (
+              <FindingCard key={finding.id} finding={finding} defaultExpanded={findings.length === 1} />
+            ))}
+          </div>
+        </section>
       )}
 
-      <div className="space-y-2">
-        <h2 className="text-lg font-medium">Recent scans</h2>
-        <div className="overflow-hidden rounded-lg border border-slate-800">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-900 text-xs uppercase text-slate-400">
+      <section className="p-4 sm:p-5 lg:p-6">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="vv-kicker">History</p>
+            <h2 className="mt-1 text-lg font-black tracking-[-0.03em]">Recent scan runs</h2>
+          </div>
+          <p className="text-[9px] font-bold uppercase tracking-wide text-[#676360]">Newest first</p>
+        </div>
+        <div className="vv-scrollbar overflow-x-auto border border-[#aaa6a1]">
+          <table className="vv-table min-w-[760px] bg-[#f7f6f4]">
+            <thead>
               <tr>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Profile</th>
-                <th className="px-4 py-2">Started</th>
-                <th className="px-4 py-2">Duration</th>
+                <th>Status</th>
+                <th>Profile</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Error summary</th>
               </tr>
             </thead>
             <tbody>
-              {scans.map((s) => (
-                <tr key={s.id} className="border-t border-slate-800">
-                  <td className="px-4 py-2">{s.status}</td>
-                  <td className="px-4 py-2">{s.scan_profile}</td>
-                  <td className="px-4 py-2 text-slate-400">{s.started_at ?? "—"}</td>
-                  <td className="px-4 py-2 text-slate-400">
-                    {s.duration_seconds ? `${s.duration_seconds.toFixed(1)}s` : "—"}
+              {scans.map((scan) => (
+                <tr key={scan.id}>
+                  <td>
+                    <span
+                      className={
+                        scan.status === "COMPLETED"
+                          ? "inline-flex bg-[#e5f3eb] px-2 py-1 text-[9px] font-black uppercase text-[#167249]"
+                          : scan.status === "FAILED" || scan.status === "CANCELLED"
+                            ? "inline-flex bg-[#ffd8d2] px-2 py-1 text-[9px] font-black uppercase text-[#a61b0d]"
+                            : scan.status === "RUNNING" || scan.status === "QUEUED"
+                              ? "inline-flex bg-[#171616] px-2 py-1 text-[9px] font-black uppercase text-white"
+                              : "inline-flex bg-[#fff0d8] px-2 py-1 text-[9px] font-black uppercase text-[#8a5508]"
+                      }
+                    >
+                      {scan.status}
+                    </span>
                   </td>
+                  <td className="font-bold">{scan.scan_profile.replace(/_/g, " ")}</td>
+                  <td className="text-[#676360]">
+                    {scan.started_at
+                      ? new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(scan.started_at))
+                      : "—"}
+                  </td>
+                  <td className="font-mono text-[10px]">{scan.duration_seconds ? scan.duration_seconds.toFixed(1) + "s" : "—"}</td>
+                  <td className="max-w-[300px] truncate text-[10px] text-[#676360]" title={scan.error_summary ?? undefined}>{scan.error_summary ?? "—"}</td>
                 </tr>
               ))}
               {scans.length === 0 && (
-                <tr>
-                  <td className="px-4 py-6 text-center text-slate-500" colSpan={4}>
-                    No scans yet.
-                  </td>
-                </tr>
+                <tr><td colSpan={5} className="py-12 text-center text-[#676360]">No scan runs recorded yet.</td></tr>
               )}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

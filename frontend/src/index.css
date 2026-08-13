@@ -1,9 +1,206 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink: #171616;
+  --muted: #676360;
+  --faint: #918d88;
+  --line: #aaa6a1;
+  --line-soft: #d8d4cf;
+  --canvas: #e9e7e4;
+  --paper: #f7f6f4;
+  --paper-strong: #fff;
+  --signal: #f0321d;
+  --signal-dark: #b91f10;
+  --signal-soft: #ffd8d2;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--ink);
 }
 
 body {
   margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+summary,
+select {
+  cursor: pointer;
+}
+
+button:disabled,
+select:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: var(--signal);
+  color: white;
+}
+
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.vv-panel {
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.vv-kicker,
+.vv-label {
+  font-size: 0.625rem;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.vv-kicker {
+  color: var(--signal);
+}
+
+.vv-label {
+  color: var(--muted);
+}
+
+.vv-button-primary,
+.vv-button-secondary {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.035em;
+  line-height: 1;
+  text-transform: uppercase;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.vv-button-primary {
+  border-color: var(--signal);
+  background: var(--signal);
+  color: white;
+}
+
+.vv-button-primary:hover:not(:disabled) {
+  border-color: var(--signal-dark);
+  background: var(--signal-dark);
+}
+
+.vv-button-secondary {
+  background: transparent;
+  color: var(--ink);
+}
+
+.vv-button-secondary:hover:not(:disabled) {
+  background: var(--ink);
+  color: white;
+}
+
+.vv-button-primary:disabled,
+.vv-button-secondary:disabled {
+  opacity: 0.38;
+}
+
+.vv-input {
+  min-height: 2.45rem;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: white;
+  padding: 0.58rem 0.7rem;
+  color: var(--ink);
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.vv-input::placeholder {
+  color: var(--faint);
+}
+
+.vv-input:hover {
+  border-color: var(--ink);
+}
+
+.vv-input:focus {
+  border-color: var(--signal);
+  box-shadow: inset 0 -2px 0 var(--signal);
+}
+
+.vv-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.78rem;
+}
+
+.vv-table thead {
+  border-bottom: 1px solid var(--line);
+}
+
+.vv-table th {
+  padding: 0.72rem 0.8rem;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.vv-table td {
+  border-bottom: 1px solid var(--line-soft);
+  padding: 0.78rem 0.8rem;
+  vertical-align: middle;
+}
+
+.vv-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.vv-table tbody tr:hover {
+  background: white;
+}
+
+.vv-scrollbar {
+  scrollbar-color: var(--line) transparent;
+  scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
