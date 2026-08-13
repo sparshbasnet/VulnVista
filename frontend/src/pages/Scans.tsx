@@ -24,7 +24,12 @@ interface Phase {
   state: PhaseState;
 }
 
-type ProfileId = "command_injection" | "weak_auth" | "sensitive_files" | "vulnerable_services";
+type ProfileId =
+  | "command_injection"
+  | "weak_auth"
+  | "sensitive_files"
+  | "vulnerable_services"
+  | "weak_tls";
 interface ProfileConfig {
   label: string;
   targetType: string;
@@ -88,6 +93,21 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "unauthenticated VNC). Only version fingerprints are used as proof — nothing is ever " +
       "exploited on the target. Can take a couple of minutes since it's a real port scan.",
   },
+  weak_tls: {
+    label: "Weak TLS Configuration",
+    targetType: "host",
+    defaultUrl: "https://tls-test",
+    buttonLabel: "Scan for weak TLS",
+    scanningLabel: "Probing TLS protocols, ciphers, and certificate…",
+    noFindingLabel: "No weak protocols, ciphers, or certificate issues detected on this target",
+    help:
+      "Enter any TLS-speaking host the backend can reach, port included if it's not 443 " +
+      "(e.g. https://tls-test defaults to :443 — that's the lab target's real port on the " +
+      "shared network, not the :8443 it's published as on localhost). Checks for deprecated " +
+      "protocols (SSLv2/3, TLSv1.0/1.1), weak cipher suites (NULL/EXPORT/RC4/DES/MD5), " +
+      "certificate issues (self-signed, expired, weak signature/key), and known TLS flaws " +
+      "(Heartbleed, ROBOT, CCS injection) — every check is a passive protocol probe.",
+  },
 };
 
 const TRUSTED_HOSTS = new Set([
@@ -95,6 +115,10 @@ const TRUSTED_HOSTS = new Set([
   "juice-shop",
   "vulnvista_dvwa",
   "vulnvista_juice_shop",
+  "metasploitable2",
+  "vulnvista_metasploitable2",
+  "tls-test",
+  "vulnvista_tls_test",
   "localhost",
   "127.0.0.1",
 ]);

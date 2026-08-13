@@ -69,6 +69,22 @@ everything else — which is what makes it work against services beyond the lab'
 list. NVD lookups work unauthenticated (5 req/30s) but go faster with a free key from
 <https://nvd.nist.gov/developers/request-an-api-key> set as `NVD_API_KEY` in `.env`.
 
+`weak_tls` needs a TLS-speaking target — the lab's `tls-test` container (a
+deliberately weak nginx build) or any other host:
+
+```bash
+docker compose -f lab/docker-compose.yml up -d --build tls-test
+cd backend
+uv run python scripts/manual_check_weak_tls.py tls-test
+uv run python scripts/manual_check_weak_tls.py --port 8443 localhost
+```
+
+Unlike the other detectors, `weak_tls` doesn't shell out to anything — it uses
+[SSLyze](https://github.com/nabla-c0d3/sslyze) as a Python library (`sslyze` in
+`pyproject.toml`), which runs every scan command by default: protocol/cipher
+enumeration for SSL 2.0 through TLS 1.3, certificate chain validation, and read-only
+probes for Heartbleed/ROBOT/CCS-injection/insecure-renegotiation.
+
 This prints the detector's verdict, severity, confidence, CWE/CVSS, and the exact
 evidence collected (e.g. which files were confirmed exposed) — useful for confirming a
 new or changed detector behaves correctly against the real target before relying on

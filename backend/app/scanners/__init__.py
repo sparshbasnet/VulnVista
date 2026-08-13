@@ -11,6 +11,7 @@ from app.scanners.command_injection import CommandInjectionDetector
 from app.scanners.sensitive_files import SensitiveFilesDetector
 from app.scanners.vulnerable_services import VulnerableServicesDetector
 from app.scanners.weak_auth import WeakAuthDetector
+from app.scanners.weak_tls import WeakTLSDetector
 
 # detector_id -> singleton instance
 DETECTOR_REGISTRY: dict[str, BaseDetector] = {
@@ -20,6 +21,7 @@ DETECTOR_REGISTRY: dict[str, BaseDetector] = {
         WeakAuthDetector(),
         SensitiveFilesDetector(),
         VulnerableServicesDetector(),
+        WeakTLSDetector(),
     )
 }
 
@@ -30,6 +32,7 @@ SCAN_PROFILES: dict[str, list[str]] = {
     "weak_auth": ["weak_auth"],
     "sensitive_files": ["sensitive_files"],
     "vulnerable_services": ["vulnerable_services"],
+    "weak_tls": ["weak_tls"],
 }
 
 
