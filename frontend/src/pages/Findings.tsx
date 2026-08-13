@@ -158,7 +158,7 @@ export default function Findings() {
             Showing <span className="text-[#171616]">{filtered.length}</span> of {findings.length} records
           </p>
           {hasFilters && (
-            <button type="button" onClick={clearFilters} className="text-[9px] font-black uppercase tracking-wide text-[#f0321d] hover:underline">Clear filters</button>
+            <button type="button" onClick={clearFilters} className="text-[9px] font-black uppercase tracking-wide text-[#a61b0d] hover:underline">Clear filters</button>
           )}
         </div>
       </section>

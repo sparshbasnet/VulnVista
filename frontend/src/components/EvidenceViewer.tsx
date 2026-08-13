@@ -26,7 +26,7 @@ function Metric({ label, value, tone = "default" }: { label: string; value: stri
   return (
     <div className="border border-[#d0ccc7] bg-white p-3">
       <p className="vv-label">{label}</p>
-      <p className={`mt-1.5 break-words text-sm font-black ${tone === "signal" ? "text-[#f0321d]" : tone === "quiet" ? "text-[#676360]" : "text-[#171616]"}`}>
+      <p className={`mt-1.5 break-words text-sm font-black ${tone === "signal" ? "text-[#a61b0d]" : tone === "quiet" ? "text-[#676360]" : "text-[#171616]"}`}>
         {value}
       </p>
     </div>
@@ -98,7 +98,7 @@ function TlsProof({ content }: { content: DataObject }) {
           );
         })}
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Metric label="Certificate" value={compact(certificate.subject)} />
         <Metric
           label="Trust"
@@ -106,6 +106,16 @@ function TlsProof({ content }: { content: DataObject }) {
           tone={certificate.is_trusted === false ? "signal" : certificate.is_trusted === true ? "default" : "quiet"}
         />
         <Metric label="Key" value={`${compact(certificate.key_type)} ${compact(certificate.key_bits)} bit`} />
+        <Metric
+          label="Expiry"
+          value={certificate.is_expired === true ? "Expired" : certificate.is_expired === false ? "Valid" : "Unknown"}
+          tone={certificate.is_expired === true ? "signal" : certificate.is_expired === false ? "default" : "quiet"}
+        />
+        <Metric
+          label="SHA-1 signature"
+          value={certificate.signed_with_sha1 === true ? "Detected" : certificate.signed_with_sha1 === false ? "Not detected" : "Unknown"}
+          tone={certificate.signed_with_sha1 === true ? "signal" : certificate.signed_with_sha1 === false ? "default" : "quiet"}
+        />
         <Metric label="TLS issue flags" value={issueFlags.length} tone={issueFlags.length ? "signal" : "default"} />
       </div>
       <div className="border border-[#d0ccc7] bg-white p-3">
@@ -285,7 +295,7 @@ function RawNode({ value, depth = 0 }: { value: unknown; depth?: number }) {
           </div>
         ))}
         {value.length > 8 && (
-          <button type="button" onClick={() => setShowAll((current) => !current)} className="text-[9px] font-black uppercase tracking-wide text-[#f0321d] hover:underline">
+          <button type="button" onClick={() => setShowAll((current) => !current)} className="text-[9px] font-black uppercase tracking-wide text-[#a61b0d] hover:underline">
             {showAll ? "Show less" : `Show ${value.length - 8} more`}
           </button>
         )}
@@ -336,10 +346,10 @@ export default function EvidenceViewer({ content, detectorId }: { content: DataO
     <div className="border border-[#aaa6a1] bg-[#f7f6f4] p-4">
       {summary}
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[#d0ccc7] pt-3">
-        <button type="button" onClick={() => setShowRaw((current) => !current)} className="text-[9px] font-black uppercase tracking-[0.08em] text-[#f0321d] hover:underline" aria-expanded={showRaw}>
+        <button type="button" onClick={() => setShowRaw((current) => !current)} className="text-[9px] font-black uppercase tracking-[0.08em] text-[#a61b0d] hover:underline" aria-expanded={showRaw}>
           {showRaw ? "Hide raw evidence" : "Inspect raw evidence"}
         </button>
-        <button type="button" onClick={copyEvidence} className="text-[9px] font-black uppercase tracking-[0.08em] text-[#514e4b] hover:text-[#f0321d]">
+        <button type="button" onClick={copyEvidence} className="text-[9px] font-black uppercase tracking-[0.08em] text-[#514e4b] hover:text-[#a61b0d]">
           {copied ? "Copied" : "Copy JSON"}
         </button>
       </div>

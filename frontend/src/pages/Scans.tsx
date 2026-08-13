@@ -141,12 +141,14 @@ function parseCookieHeader(raw: string): Record<string, string> {
 }
 
 export default function Scans() {
-  const { refresh } = useAppData();
+  const { targets: registeredTargets, refresh, replaceFinding } = useAppData();
   const [scans, setScans] = useState<Scan[]>([]);
   const [profile, setProfile] = useState<ProfileId>("command_injection");
   const [url, setUrl] = useState(PROFILES.command_injection.defaultUrl);
   const [name, setName] = useState("");
   const [authorized, setAuthorized] = useState(false);
+  const [authorizationScope, setAuthorizationScope] = useState("");
+  const [selectedTargetId, setSelectedTargetId] = useState("NEW");
   const [advUsername, setAdvUsername] = useState("");
   const [advPassword, setAdvPassword] = useState("");
   const [advLoginPath, setAdvLoginPath] = useState("");
@@ -169,6 +171,24 @@ export default function Scans() {
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+  function upsertScan(next: Scan) {
+    setScans((current) => {
+      const exists = current.some((scan) => scan.id === next.id);
+      return exists
+        ? current.map((scan) => (scan.id === next.id ? next : scan))
+        : [next, ...current];
+    });
+  }
+
+  function clearAdvancedOverrides() {
+    setAdvUsername("");
+    setAdvPassword("");
+    setAdvLoginPath("");
+    setAdvCookie("");
+    setAdvParameter("");
+    setAdvPath("");
+  }
+
   function selectProfile(next: ProfileId) {
     // Only clobber the URL if it's still the previous profile's default —
     // preserves whatever the user typed themselves.
@@ -176,6 +196,35 @@ export default function Scans() {
       setUrl(PROFILES[next].defaultUrl);
     }
     setProfile(next);
+    setSelectedTargetId("NEW");
+    setAuthorized(false);
+    setAuthorizationScope("");
+    clearAdvancedOverrides();
+  }
+
+  function updateUrl(next: string) {
+    setUrl(next);
+    setSelectedTargetId("NEW");
+    setAuthorized(false);
+    setAuthorizationScope("");
+    clearAdvancedOverrides();
+  }
+
+  function chooseRegisteredTarget(id: string) {
+    setSelectedTargetId(id);
+    if (id === "NEW") return;
+    const target = registeredTargets.find((candidate) => candidate.id === id);
+    if (!target?.base_url) return;
+    setUrl(target.base_url);
+    setName(target.name);
+    setAuthorized(false);
+    setAuthorizationScope("");
+    clearAdvancedOverrides();
+  }
+
+  function acknowledgeAuthorization(checked: boolean) {
+    setAuthorized(checked);
+    setAuthorizationScope(checked ? url.trim() : "");
   }
 
   async function startScan(event: FormEvent) {
@@ -204,7 +253,10 @@ export default function Scans() {
 
     setPhases([]);
     const cfg = PROFILES[profile];
-    const trusted = isTrustedHost(url);
+    const existingTarget = selectedTargetId === "NEW"
+      ? undefined
+      : registeredTargets.find((candidate) => candidate.id === selectedTargetId);
+    const labTrusted = isTrustedHost(url);
     try {
       const scanConfig: Record<string, unknown> = {};
       if (advUsername.trim() && advPassword.trim()) {
@@ -219,34 +271,41 @@ export default function Scans() {
         else scanConfig.exec_path = advPath.trim();
       }
 
-      const p1 = begin(`Registering target ${url.trim()}…`);
-      const target = await api.createTarget({
-        name: name.trim() || url.trim(),
-        target_type: cfg.targetType,
-        base_url: url.trim(),
-        environment: "lab",
-        authorization_confirmed: authorized,
-        ...(Object.keys(scanConfig).length > 0 ? { scan_config: scanConfig } : {}),
-      });
-      finish(p1, "done", `Target registered: ${target.name}`);
+      const p1 = begin(existingTarget ? `Using target ${existingTarget.name}…` : `Registering target ${url.trim()}…`);
+      const target = existingTarget ?? await api.createTarget({
+          name: name.trim() || url.trim(),
+          target_type: cfg.targetType,
+          base_url: url.trim(),
+          environment: "lab",
+          authorization_confirmed: authorized && authorizationScope === url.trim(),
+          ...(Object.keys(scanConfig).length > 0 ? { scan_config: scanConfig } : {}),
+        });
+      finish(p1, "done", existingTarget ? `Target reused: ${target.name}` : `Target registered: ${target.name}`);
 
       const p2 = begin("Checking authorization…");
       if (!target.is_allowed) {
         finish(p2, "error", `${url} is not approved for scanning`);
         throw new Error(
-          trusted
+          labTrusted
             ? `${url} could not be approved automatically — please try again.`
             : `${url} isn't a recognized lab host and no authorization was confirmed. Check ` +
               `"I have authorization to test this target" above and try again.`,
         );
       }
-      finish(p2, "done", trusted ? "Trusted lab host ✓" : "Authorized by you ✓");
+      finish(
+        p2,
+        "done",
+        labTrusted
+          ? existingTarget ? "Trusted lab target reused ✓" : "Trusted lab host ✓"
+          : existingTarget ? "Authorized target reused ✓" : "Authorized by you ✓",
+      );
 
       const p3 = begin("Launching scan…");
       let current = await api.createScan({
         target_id: target.id,
         scan_profile: profile,
       });
+      upsertScan(current);
       finish(p3, "done", `Scan ${current.id.slice(0, 8)} launched`);
 
       const p4 = begin(cfg.scanningLabel);
@@ -262,6 +321,7 @@ export default function Scans() {
         relabel(p4, `Scanning… ${current.status.toLowerCase()} (${secs}s elapsed)`);
         await sleep(POLL_INTERVAL_MS);
         current = await api.getScan(current.id);
+        upsertScan(current);
       }
 
       const dur = (current.duration_seconds ?? 0).toFixed(1);
@@ -282,18 +342,24 @@ export default function Scans() {
       finish(p5, "done");
 
       api.listScans().then(setScans).catch(() => undefined);
-      void refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+      void refresh();
     }
   }
 
   const activeScans = scans.filter((scan) => scan.status === "QUEUED" || scan.status === "RUNNING").length;
+  const selectedRegisteredTarget = selectedTargetId === "NEW"
+    ? undefined
+    : registeredTargets.find((target) => target.id === selectedTargetId);
+  const canScanTarget = Boolean(
+    selectedRegisteredTarget?.is_allowed || isTrustedHost(url) || authorizationScope === url.trim(),
+  );
 
   return (
-    <div className="min-h-screen bg-[#f7f6f4]">
+    <div className="bg-[#f7f6f4]">
       <PageHeader
         eyebrow="Scanner control"
         title="Run security scans"
@@ -302,7 +368,7 @@ export default function Scans() {
           <>
             <div className="px-4 py-1 text-right">
               <p className="vv-label">Active</p>
-              <p className="mt-1 text-sm font-black text-[#f0321d]">{activeScans}</p>
+              <p className="mt-1 text-sm font-black text-[#a61b0d]">{activeScans}</p>
             </div>
             <div className="px-4 py-1 text-right">
               <p className="vv-label">Total runs</p>
@@ -348,6 +414,15 @@ export default function Scans() {
             </div>
 
             <div className="space-y-4 p-4 sm:p-5">
+              <label>
+                <span className="vv-label">Reuse authorized target · optional</span>
+                <select value={selectedTargetId} onChange={(event) => chooseRegisteredTarget(event.target.value)} className="vv-input mt-2 font-bold">
+                  <option value="NEW">Register a new target record</option>
+                  {registeredTargets.filter((target) => target.is_allowed && target.base_url).map((target) => (
+                    <option key={target.id} value={target.id}>{target.name} · {target.base_url}</option>
+                  ))}
+                </select>
+              </label>
               <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_240px]">
                 <label>
                   <span className="vv-label">Target URL</span>
@@ -355,7 +430,7 @@ export default function Scans() {
                     type="url"
                     required
                     value={url}
-                    onChange={(event) => setUrl(event.target.value)}
+                    onChange={(event) => updateUrl(event.target.value)}
                     placeholder={PROFILES[profile].defaultUrl}
                     className="vv-input mt-2 font-mono"
                   />
@@ -372,12 +447,12 @@ export default function Scans() {
                 </label>
               </div>
 
-              {!isTrustedHost(url) && (
+              {!isTrustedHost(url) && !selectedRegisteredTarget?.is_allowed && (
                 <label className="flex items-start gap-3 border border-[#f0a39a] bg-[#fff0ed] p-3 text-[10px] leading-relaxed text-[#76180e]">
                   <input
                     type="checkbox"
                     checked={authorized}
-                    onChange={(event) => setAuthorized(event.target.checked)}
+                    onChange={(event) => acknowledgeAuthorization(event.target.checked)}
                     className="mt-0.5 h-4 w-4 shrink-0 accent-[#f0321d]"
                   />
                   <span>
@@ -390,23 +465,25 @@ export default function Scans() {
               <details className="border border-[#aaa6a1] bg-[#efedea]">
                 <summary className="flex min-h-11 items-center justify-between px-3 text-[10px] font-black uppercase tracking-[0.08em]">
                   Advanced probe configuration
-                  <span className="text-[#f0321d]">＋</span>
+                  <span className="text-[#a61b0d]">＋</span>
                 </summary>
-                <div className="grid gap-3 border-t border-[#aaa6a1] p-3 sm:grid-cols-2">
+                <fieldset disabled={Boolean(selectedRegisteredTarget)} className="grid gap-3 border-t border-[#aaa6a1] p-3 disabled:opacity-50 sm:grid-cols-2">
                   {profile === "command_injection" && (
                     <>
-                      <input type="text" value={advUsername} onChange={(event) => setAdvUsername(event.target.value)} placeholder="Login username" className="vv-input" />
-                      <input type="password" value={advPassword} onChange={(event) => setAdvPassword(event.target.value)} placeholder="Login password" className="vv-input" />
-                      <input type="text" value={advLoginPath} onChange={(event) => setAdvLoginPath(event.target.value)} placeholder="Login path (e.g. /login.php)" className="vv-input sm:col-span-2" />
+                      <input aria-label="Login username" type="text" value={advUsername} onChange={(event) => setAdvUsername(event.target.value)} placeholder="Login username" className="vv-input" />
+                      <input aria-label="Login password" type="password" value={advPassword} onChange={(event) => setAdvPassword(event.target.value)} placeholder="Login password" className="vv-input" />
+                      <input aria-label="Login path" type="text" value={advLoginPath} onChange={(event) => setAdvLoginPath(event.target.value)} placeholder="Login path (e.g. /login.php)" className="vv-input sm:col-span-2" />
                     </>
                   )}
-                  <input type="text" value={advCookie} onChange={(event) => setAdvCookie(event.target.value)} placeholder="Session cookie (name=value; name2=value2)" className="vv-input sm:col-span-2" />
-                  <input type="text" value={advParameter} onChange={(event) => setAdvParameter(event.target.value)} placeholder="Exact parameter name (e.g. ip)" className="vv-input" />
-                  <input type="text" value={advPath} onChange={(event) => setAdvPath(event.target.value)} placeholder="Exact injection path or full URL" className="vv-input" />
+                  <input aria-label="Session cookie" type="text" value={advCookie} onChange={(event) => setAdvCookie(event.target.value)} placeholder="Session cookie (name=value; name2=value2)" className="vv-input sm:col-span-2" />
+                  <input aria-label="Exact parameter name" type="text" value={advParameter} onChange={(event) => setAdvParameter(event.target.value)} placeholder="Exact parameter name (e.g. ip)" className="vv-input" />
+                  <input aria-label="Exact injection path or URL" type="text" value={advPath} onChange={(event) => setAdvPath(event.target.value)} placeholder="Exact injection path or full URL" className="vv-input" />
                   <p className="text-[9px] leading-relaxed text-[#676360] sm:col-span-2">
-                    Leave these blank for automatic discovery. Session cookies are the most reliable option for targets behind non-standard login flows.
+                    {selectedRegisteredTarget
+                      ? "This run reuses the authorization and stored scan configuration of the selected target. Register a new target to change these overrides."
+                      : "Leave these blank for automatic discovery. Session cookies are the most reliable option for targets behind non-standard login flows."}
                   </p>
-                </div>
+                </fieldset>
               </details>
 
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d0ccc7] pt-4">
@@ -415,7 +492,7 @@ export default function Scans() {
                 </p>
                 <button
                   type="submit"
-                  disabled={busy || (!isTrustedHost(url) && !authorized)}
+            disabled={busy || !canScanTarget}
                   className="vv-button-primary min-w-[190px]"
                 >
                   {busy ? "Scan in progress…" : PROFILES[profile].buttonLabel}
@@ -425,7 +502,7 @@ export default function Scans() {
           </div>
 
           {(phases.length > 0 || error) && (
-            <div className="border-t border-[#8f8b87] bg-[#201f1e] p-4 text-[#f3f0ed]">
+            <div className="border-t border-[#8f8b87] bg-[#201f1e] p-4 text-[#f3f0ed]" role="status" aria-live="polite">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-[9px] font-black uppercase tracking-[0.1em] text-[#ff8c7c]">Run console</p>
                 <span className="font-mono text-[9px] text-[#aaa6a1]">{phases.length} phases recorded</span>
@@ -449,7 +526,7 @@ export default function Scans() {
                     </span>
                   </div>
                 ))}
-                {error && <p className="border-l-2 border-[#f0321d] pl-3 font-mono text-[10px] text-[#ff8c7c]">{error}</p>}
+                {error && <p role="alert" className="border-l-2 border-[#f0321d] pl-3 font-mono text-[10px] text-[#ff8c7c]">{error}</p>}
               </div>
             </div>
           )}
@@ -463,11 +540,11 @@ export default function Scans() {
               <p className="vv-kicker">Latest run</p>
               <h2 className="mt-1 text-lg font-black tracking-[-0.03em]">Captured findings</h2>
             </div>
-            <span className="text-[10px] font-black uppercase tracking-wide text-[#f0321d]">{findings.length} observed</span>
+            <span className="text-[10px] font-black uppercase tracking-wide text-[#a61b0d]">{findings.length} observed</span>
           </div>
           <div className="space-y-2">
             {findings.map((finding) => (
-              <FindingCard key={finding.id} finding={finding} defaultExpanded={findings.length === 1} />
+              <FindingCard key={finding.id} finding={finding} defaultExpanded={findings.length === 1} onStatusChange={replaceFinding} />
             ))}
           </div>
         </section>

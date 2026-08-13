@@ -159,7 +159,7 @@ export default function FindingCard({
             </div>
             <div className="bg-[#f7f6f4] p-4">
               <p className="vv-label">02 · Scanner validation</p>
-              <p className={`mt-1.5 text-[10px] font-black ${current.validation_status === "CONFIRMED" ? "text-[#f0321d]" : "text-[#514e4b]"}`}>
+              <p className={`mt-1.5 text-[10px] font-black ${current.validation_status === "CONFIRMED" ? "text-[#a61b0d]" : "text-[#514e4b]"}`}>
                 {humanize(current.validation_status)}
               </p>
             </div>
@@ -182,7 +182,7 @@ export default function FindingCard({
                 <p className="vv-label">Evidence artifacts</p>
                 <p className="mt-1 text-[10px] text-[#676360]">Stored detector evidence captured by {humanize(current.detector_id)}</p>
               </div>
-              <Link to={`/evidence?finding=${current.id}`} className="text-[9px] font-black uppercase tracking-[0.08em] text-[#f0321d] hover:underline">
+              <Link to={`/evidence?finding=${current.id}`} className="text-[9px] font-black uppercase tracking-[0.08em] text-[#a61b0d] hover:underline">
                 Open evidence workspace →
               </Link>
             </div>

@@ -48,9 +48,9 @@ function StatCell({
   signal?: boolean;
 }) {
   return (
-    <div className="min-h-[124px] border-b border-r border-[#aaa6a1] bg-[#f7f6f4] p-5 last:border-r-0 lg:border-b-0">
+    <div className="min-h-[124px] bg-[#f7f6f4] p-5">
       <p className="vv-label">{label}</p>
-      <p className={`mt-1 text-[clamp(2.25rem,4vw,3.1rem)] font-black leading-none tracking-[-0.055em] ${signal ? "text-[#f0321d]" : "text-[#171616]"}`}>
+      <p className={`mt-1 text-[clamp(2.25rem,4vw,3.1rem)] font-black leading-none tracking-[-0.055em] ${signal ? "text-[#a61b0d]" : "text-[#171616]"}`}>
         {value}
       </p>
       <p className="mt-2 text-[11px] leading-snug text-[#514e4b]">{sub}</p>
@@ -83,7 +83,7 @@ function SeverityDistribution({ findings }: { findings: Finding[] }) {
     <section className="border-b border-r border-[#aaa6a1] p-5 lg:border-b-0">
       <SectionHeading
         title="Severity distribution"
-        sub={`${open.length} open finding records · CVSS weighted priority`}
+        sub={`${open.length} open finding records · grouped by severity`}
       />
 
       <div className="mt-5 flex h-7 overflow-hidden bg-[#e4e1de]" aria-label="Stacked severity distribution">
@@ -128,14 +128,17 @@ function ScanOutcomes({ scans }: { scans: Scan[] }) {
       const timestamp = scan.completed_at ?? scan.started_at ?? scan.created_at;
       return localDayKey(timestamp) === key;
     });
+    const terminalDayScans = dayScans.filter((scan) =>
+      ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(scan.status),
+    );
     return {
       key,
       label: new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(date),
       day: String(date.getDate()),
-      completed: dayScans.filter((scan) => scan.status === "COMPLETED").length,
-      partial: dayScans.filter((scan) => scan.status === "PARTIAL").length,
-      failed: dayScans.filter((scan) => ["FAILED", "CANCELLED"].includes(scan.status)).length,
-      total: dayScans.length,
+      completed: terminalDayScans.filter((scan) => scan.status === "COMPLETED").length,
+      partial: terminalDayScans.filter((scan) => scan.status === "PARTIAL").length,
+      failed: terminalDayScans.filter((scan) => ["FAILED", "CANCELLED"].includes(scan.status)).length,
+      total: terminalDayScans.length,
     };
   });
   const max = Math.max(1, ...days.map((day) => day.total));
@@ -152,7 +155,12 @@ function ScanOutcomes({ scans }: { scans: Scan[] }) {
 
       <div className="mt-5 grid h-[178px] grid-cols-7 gap-2 border-b border-[#77736f] px-1" aria-label="Daily scan outcomes">
         {days.map((day) => (
-          <div key={day.key} className="flex min-w-0 flex-col justify-end text-center">
+          <div
+            key={day.key}
+            className="flex min-w-0 flex-col justify-end text-center"
+            role="img"
+            aria-label={`${day.label} ${day.day}: ${day.completed} completed, ${day.partial} partial, ${day.failed} failed`}
+          >
             <div className="mx-auto flex w-full max-w-9 flex-col justify-end" style={{ height: "128px" }}>
               <div
                 className="flex w-full flex-col justify-end"
@@ -230,13 +238,13 @@ function DetectorCoverage({ findings, scans }: { findings: Finding[]; scans: Sca
               />
               <div className="flex items-start justify-between gap-3">
                 <span className="font-mono text-[9px] text-[#77736f]">{String(detector.n).padStart(2, "0")}</span>
-                <span className={`text-base font-black ${criticalOpen ? "text-[#f0321d]" : "text-[#aaa6a1]"}`}>
+                <span className={`text-base font-black ${criticalOpen ? "text-[#a61b0d]" : "text-[#aaa6a1]"}`}>
                   {detectorFindings.length || "—"}
                 </span>
               </div>
               <h3 className="mt-1 text-xs font-black leading-tight">{detector.title}</h3>
               <p className="mt-1 truncate font-mono text-[9px] text-[#77736f]">{detector.file}</p>
-              <p className={`mt-2 text-[9px] font-bold uppercase tracking-[0.08em] ${criticalOpen ? "text-[#f0321d]" : "text-[#676360]"}`}>
+              <p className={`mt-2 text-[9px] font-bold uppercase tracking-[0.08em] ${criticalOpen ? "text-[#a61b0d]" : "text-[#676360]"}`}>
                 {criticalOpen ? `${criticalOpen} critical open` : status}
               </p>
             </div>
@@ -289,9 +297,8 @@ function HighestRisk({ findings, targets }: { findings: Finding[]; targets: Targ
     .filter((finding) => finding.finding_status === "OPEN")
     .sort(
       (a, b) =>
-        (b.cvss_score ?? severityWeight[b.severity] ?? 0) -
-          (a.cvss_score ?? severityWeight[a.severity] ?? 0) ||
-        (severityWeight[b.severity] ?? 0) - (severityWeight[a.severity] ?? 0),
+        (severityWeight[b.severity] ?? 0) - (severityWeight[a.severity] ?? 0) ||
+        (b.cvss_score ?? 0) - (a.cvss_score ?? 0),
     )
     .slice(0, 6);
 
@@ -300,7 +307,7 @@ function HighestRisk({ findings, targets }: { findings: Finding[]; targets: Targ
       <SectionHeading
         title="Highest-risk open findings"
         sub="Prioritized by CVSS and severity"
-        action={<Link to="/findings" className="text-[10px] font-black uppercase tracking-wide text-[#f0321d] hover:underline">All findings →</Link>}
+        action={<Link to="/findings" className="text-[10px] font-black uppercase tracking-wide text-[#a61b0d] hover:underline">All findings →</Link>}
       />
 
       <div className="vv-scrollbar mt-4 overflow-x-auto">
@@ -318,12 +325,12 @@ function HighestRisk({ findings, targets }: { findings: Finding[]; targets: Targ
             {highest.map((finding) => (
               <tr key={finding.id}>
                 <td>
-                  <span className="inline-flex min-w-[70px] justify-center bg-[#ffd8d2] px-2 py-1 text-[9px] font-black uppercase text-[#a61b0d]">
+                  <span className={`inline-flex min-w-[70px] justify-center px-2 py-1 text-[9px] font-black uppercase ${finding.severity === "CRITICAL" ? "bg-[#b71f0e] text-white" : finding.severity === "HIGH" ? "bg-[#d62d18] text-white" : "bg-[#ffd8d2] text-[#a61b0d]"}`}>
                     {finding.severity}
                   </span>
                 </td>
                 <td>
-                  <Link to={`/findings?finding=${finding.id}`} className="font-black hover:text-[#f0321d]">
+                  <Link to={`/findings?finding=${finding.id}`} className="font-black hover:text-[#a61b0d]">
                     {finding.vulnerability_name}
                   </Link>
                   <p className="mt-0.5 max-w-[260px] truncate font-mono text-[9px] text-[#676360]">
@@ -353,12 +360,14 @@ export default function Dashboard() {
   const open = findings.filter((finding) => finding.finding_status === "OPEN");
   const critical = open.filter((finding) => finding.severity === "CRITICAL");
   const confirmed = findings.filter((finding) => finding.validation_status === "CONFIRMED");
-  const evidenceCount = findings.reduce((total, finding) => total + (finding.evidence?.length ?? 0), 0);
   const suspected = findings.filter((finding) => finding.validation_status === "SUSPECTED").length;
   const lastScan = scans[0];
+  const terminalScans = scans.filter((scan) => ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"].includes(scan.status));
+  const completedScans = terminalScans.filter((scan) => scan.status === "COMPLETED").length;
+  const scanSuccess = terminalScans.length ? Math.round((completedScans / terminalScans.length) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-[#f7f6f4]">
+    <div className="bg-[#f7f6f4]">
       <PageHeader
         eyebrow="Overview"
         title="Security posture"
@@ -373,7 +382,7 @@ export default function Dashboard() {
             </div>
             <div className="min-w-[112px] px-4 py-1 text-right">
               <p className="vv-label">Open critical</p>
-              <p className="mt-1 text-[12px] font-black text-[#f0321d]">{critical.length} findings</p>
+              <p className="mt-1 text-[12px] font-black text-[#a61b0d]">{critical.length} findings</p>
             </div>
           </>
         }
@@ -389,11 +398,11 @@ export default function Dashboard() {
         <div className="border-b border-[#aaa6a1] px-5 py-4 text-xs font-semibold uppercase tracking-wide text-[#676360]">Loading security data…</div>
       )}
 
-      <section className="grid border-b border-[#aaa6a1] sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-px border-b border-[#aaa6a1] bg-[#aaa6a1] sm:grid-cols-2 lg:grid-cols-4">
         <StatCell label="Open findings" value={String(open.length)} sub={`across ${targets.length} registered target records`} />
         <StatCell label="Critical severity" value={String(critical.length)} sub="open records · immediate action" signal />
         <StatCell label="Confirmed by probe" value={String(confirmed.length)} sub={`${suspected} suspected awaiting proof`} />
-        <StatCell label="Evidence artifacts" value={String(evidenceCount)} sub="structured detector data available to inspect" />
+        <StatCell label="Scan success" value={`${scanSuccess}%`} sub={`${completedScans} of ${terminalScans.length} terminal runs completed`} />
       </section>
 
       <div className="grid border-b border-[#aaa6a1] lg:grid-cols-2">

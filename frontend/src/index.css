@@ -7,7 +7,7 @@
   text-rendering: optimizeLegibility;
   --ink: #171616;
   --muted: #5b5754;
-  --faint: #77736f;
+  --faint: #676360;
   --line: #aaa6a1;
   --line-soft: #d8d4cf;
   --canvas: #e9e7e4;
@@ -71,7 +71,7 @@ select:disabled {
 
 .vv-kicker,
 .vv-label {
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 750;
   letter-spacing: 0.16em;
   line-height: 1.2;

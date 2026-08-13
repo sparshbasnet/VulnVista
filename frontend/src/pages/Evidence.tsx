@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import EvidenceViewer from "../components/EvidenceViewer";
 import PageHeader from "../components/PageHeader";
@@ -8,7 +8,7 @@ import type { Finding, FindingStatus } from "../types";
 
 const severityTone: Record<string, string> = {
   CRITICAL: "bg-[#b71f0e] text-white",
-  HIGH: "bg-[#f0321d] text-white",
+  HIGH: "bg-[#d62d18] text-white",
   MEDIUM: "bg-[#ffb2a8] text-[#76180e]",
   LOW: "bg-[#d5d1cd] text-[#393634]",
   INFO: "bg-[#e8e5e1] text-[#514e4b]",
@@ -31,9 +31,9 @@ function formatDate(value: string | null | undefined): string {
 
 function ProofStat({ label, value, signal = false }: { label: string; value: number; signal?: boolean }) {
   return (
-    <div className="border-b border-r border-[#aaa6a1] p-4 last:border-r-0 sm:border-b-0">
+    <div className="bg-[#f7f6f4] p-4">
       <p className="vv-label">{label}</p>
-      <p className={`mt-1 text-2xl font-black tracking-[-0.04em] ${signal ? "text-[#f0321d]" : "text-[#171616]"}`}>{value}</p>
+      <p className={`mt-1 text-2xl font-black tracking-[-0.04em] ${signal ? "text-[#a61b0d]" : "text-[#171616]"}`}>{value}</p>
     </div>
   );
 }
@@ -45,8 +45,9 @@ export default function Evidence() {
   const [query, setQuery] = useState("");
   const [detector, setDetector] = useState("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(requestedId);
-  const [saving, setSaving] = useState(false);
+  const [savingFindingId, setSavingFindingId] = useState<string | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const detailRef = useRef<HTMLElement>(null);
 
   const evidenceFindings = useMemo(
     () => findings.filter((finding) => (finding.evidence?.length ?? 0) > 0),
@@ -79,16 +80,16 @@ export default function Evidence() {
   }, [evidenceFindings, query, detector, targetMap]);
 
   useEffect(() => {
-    if (requestedId && evidenceFindings.some((finding) => finding.id === requestedId)) {
+    if (requestedId && visible.some((finding) => finding.id === requestedId)) {
       setSelectedId(requestedId);
       return;
     }
-    if (!selectedId || !evidenceFindings.some((finding) => finding.id === selectedId)) {
-      setSelectedId(evidenceFindings[0]?.id ?? null);
+    if (!selectedId || !visible.some((finding) => finding.id === selectedId)) {
+      setSelectedId(visible[0]?.id ?? null);
     }
-  }, [requestedId, evidenceFindings, selectedId]);
+  }, [requestedId, visible, selectedId]);
 
-  const selected = evidenceFindings.find((finding) => finding.id === selectedId) ?? null;
+  const selected = visible.find((finding) => finding.id === selectedId) ?? null;
   const selectedTarget = selected ? targetMap.get(selected.target_id) : undefined;
   const selectedScan = selected ? scanMap.get(selected.scan_id) : undefined;
   const series = selected
@@ -98,7 +99,8 @@ export default function Evidence() {
             finding.target_id === selected.target_id &&
             finding.detector_id === selected.detector_id &&
             finding.vulnerability_name === selected.vulnerability_name &&
-            finding.affected_endpoint === selected.affected_endpoint,
+            finding.affected_endpoint === selected.affected_endpoint &&
+            finding.parameter === selected.parameter,
         )
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
     : [];
@@ -109,12 +111,19 @@ export default function Evidence() {
 
   function selectFinding(id: string) {
     setSelectedId(id);
+    setStatusError(null);
     setSearchParams({ finding: id });
+    window.requestAnimationFrame(() => {
+      if (window.matchMedia("(max-width: 1279px)").matches) {
+        detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        detailRef.current?.focus({ preventScroll: true });
+      }
+    });
   }
 
   async function changeStatus(finding: Finding, status: FindingStatus) {
     if (status === finding.finding_status) return;
-    setSaving(true);
+    setSavingFindingId(finding.id);
     setStatusError(null);
     try {
       const updated = await api.updateFindingStatus(finding.id, status);
@@ -122,12 +131,12 @@ export default function Evidence() {
     } catch (err) {
       setStatusError(err instanceof Error ? err.message : String(err));
     } finally {
-      setSaving(false);
+      setSavingFindingId(null);
     }
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f6f4]">
+    <div className="bg-[#f7f6f4]">
       <PageHeader
         eyebrow="Evidence library"
         title="Evidence workspace"
@@ -135,7 +144,7 @@ export default function Evidence() {
         right={
           <div className="px-4 py-1 text-right">
             <p className="vv-label">Artifacts</p>
-            <p className="mt-1 text-sm font-black text-[#f0321d]">{artifactCount}</p>
+            <p className="mt-1 text-sm font-black text-[#a61b0d]">{artifactCount}</p>
           </div>
         }
       />
@@ -147,7 +156,7 @@ export default function Evidence() {
         </div>
       )}
 
-      <section className="grid border-b border-[#aaa6a1] grid-cols-2 sm:grid-cols-4">
+      <section className="grid grid-cols-2 gap-px border-b border-[#aaa6a1] bg-[#aaa6a1] sm:grid-cols-4">
         <ProofStat label="Artifacts" value={artifactCount} signal />
         <ProofStat label="Probe confirmed" value={confirmedCount} />
         <ProofStat label="Detector sources" value={detectors.length} />
@@ -172,7 +181,7 @@ export default function Evidence() {
             <p className="mt-3 text-[9px] font-bold uppercase tracking-wide text-[#676360]">{visible.length} finding records with evidence</p>
           </div>
 
-          <div className="vv-scrollbar max-h-[420px] overflow-auto xl:max-h-[calc(100vh-364px)]">
+          <div className="vv-scrollbar max-h-[300px] overflow-auto xl:max-h-[calc(100vh-364px)]">
             {visible.map((finding) => {
               const target = targetMap.get(finding.target_id);
               const active = finding.id === selected?.id;
@@ -180,8 +189,9 @@ export default function Evidence() {
                 <button
                   key={finding.id}
                   type="button"
+                  disabled={savingFindingId !== null}
                   onClick={() => selectFinding(finding.id)}
-                  className={`block w-full border-b border-[#c8c4bf] p-4 text-left transition-colors ${active ? "bg-white shadow-[inset_3px_0_0_#f0321d]" : "hover:bg-[#f7f6f4]"}`}
+                  className={`block w-full border-b border-[#c8c4bf] p-4 text-left transition-colors disabled:cursor-wait ${active ? "bg-white shadow-[inset_3px_0_0_#f0321d]" : "hover:bg-[#f7f6f4]"}`}
                   aria-pressed={active}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -199,7 +209,7 @@ export default function Evidence() {
           </div>
         </aside>
 
-        <main className="min-w-0">
+        <section ref={detailRef} tabIndex={-1} className="min-w-0 scroll-mt-28 outline-none">
           {selected ? (
             <>
               <section className="border-b border-[#aaa6a1] p-4 sm:p-6">
@@ -235,9 +245,9 @@ export default function Evidence() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <h3 className="text-xs font-black uppercase tracking-[0.1em]">Observation history</h3>
-                      <p className="mt-1 text-[10px] leading-relaxed text-[#676360]">Exact same target record, detector, vulnerability, and endpoint.</p>
+                      <p className="mt-1 text-[10px] leading-relaxed text-[#676360]">Exact same target record, detector, vulnerability, endpoint, and parameter.</p>
                     </div>
-                    <span className="text-[10px] font-black text-[#f0321d]">{series.length} observation{series.length === 1 ? "" : "s"}</span>
+                    <span className="text-[10px] font-black text-[#a61b0d]">{series.length} observation{series.length === 1 ? "" : "s"}</span>
                   </div>
                   <div className="vv-scrollbar mt-4 flex overflow-x-auto pb-2">
                     {series.map((observation, index) => (
@@ -259,7 +269,7 @@ export default function Evidence() {
                   <select
                     value={selected.finding_status}
                     onChange={(event) => changeStatus(selected, event.target.value as FindingStatus)}
-                    disabled={saving}
+                    disabled={savingFindingId !== null}
                     className="vv-input mt-2 font-bold uppercase"
                   >
                     <option value="OPEN">Open</option>
@@ -269,7 +279,7 @@ export default function Evidence() {
                     <option value="FALSE_POSITIVE">False positive</option>
                   </select>
                   <p className="mt-2 text-[9px] leading-relaxed text-[#676360]">
-                    {saving ? "Saving…" : `Record updated ${formatDate(selected.updated_at ?? selected.created_at)}. Workflow state is separate from scanner validation.`}
+                    {savingFindingId === selected.id ? "Saving…" : `Record updated ${formatDate(selected.updated_at ?? selected.created_at)}. Workflow state is separate from scanner validation.`}
                   </p>
                   {statusError && <p className="mt-2 text-[9px] font-bold text-[#b91f10]">{statusError}</p>}
                 </div>
@@ -299,7 +309,7 @@ export default function Evidence() {
               </div>
             </div>
           )}
-        </main>
+        </section>
       </div>
     </div>
   );

@@ -114,7 +114,7 @@ export default function Layout() {
               </button>
             </div>
           </div>
-          <nav className="vv-scrollbar flex overflow-x-auto border-t border-[#d8d4cf] px-2" aria-label="Primary navigation">
+          <nav className="vv-scrollbar flex max-w-full overflow-x-auto border-t border-[#d8d4cf] px-2" aria-label="Primary navigation">
             {navItems.map((item) => (
               <NavLink
                 key={item.to}
