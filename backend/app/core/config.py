@@ -23,7 +23,8 @@ class Settings(BaseSettings):
     # once the requester explicitly confirms they're authorized to test it
     # (see api/v1/targets.py). This is a convenience trust list, not a hard cap.
     lab_allowed_hosts: str = (
-        "dvwa,juice-shop,vulnvista_dvwa,vulnvista_juice_shop,localhost,127.0.0.1"
+        "dvwa,juice-shop,vulnvista_dvwa,vulnvista_juice_shop,"
+        "metasploitable2,vulnvista_metasploitable2,localhost,127.0.0.1"
     )
 
     # Hosts that can never be scanned, acknowledgment or not — cloud metadata

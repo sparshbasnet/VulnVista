@@ -7,8 +7,10 @@
 
 This compose file brings up the intentionally vulnerable applications used as scan
 targets, per the [implementation plan](../VulnVista_IMPLEMENTATION_PLAN.md#1-purpose):
-DVWA and OWASP Juice Shop. Metasploitable2 is **not** included here — see
-[`METASPLOITABLE.md`](./METASPLOITABLE.md) for why and how to run it instead.
+DVWA, OWASP Juice Shop, and Metasploitable2. See
+[`METASPLOITABLE.md`](./METASPLOITABLE.md) for details on the Metasploitable2
+container (its services start via a boot script, not just `docker run`) and a
+higher-fidelity VM alternative.
 
 ## Prerequisites
 
@@ -23,7 +25,7 @@ found` error, run setup.sh first.
 Run these from the repository root, so the shared `.env` file is picked up:
 
 ```bash
-# Start DVWA + Juice Shop
+# Start DVWA + Juice Shop + Metasploitable2
 docker compose --env-file .env -f lab/docker-compose.yml up -d
 
 # Stop them (data in ./storage/lab persists)
@@ -36,9 +38,10 @@ docker compose --env-file .env -f lab/docker-compose.yml down
 | --- | --- | --- | --- |
 | DVWA | <http://localhost:8081> (`DVWA_PORT`) | `admin` / `password` | Stateless — reset via its own "Create / Reset Database" page. |
 | OWASP Juice Shop | <http://localhost:3000> (`JUICE_SHOP_PORT`) | No login required to browse; challenges create their own accounts | Bind-mounted to `./storage/lab/juice-shop` on the host, so challenge progress survives restarts. |
+| Metasploitable2 | Many services, each at `localhost:<real-port>+10000` (e.g. `localhost:10022` for SSH) | `msfadmin` / `msfadmin` | Stateless — see [`METASPLOITABLE.md`](./METASPLOITABLE.md) for the full port list and details. |
 
 From inside the backend container (or once detectors run), these are reachable at
-`http://dvwa` and `http://juice-shop` on `vulnvista_net`.
+`http://dvwa`, `http://juice-shop`, and `metasploitable2:<real-port>` on `vulnvista_net`.
 
 ## Safety controls
 
