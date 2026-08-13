@@ -68,6 +68,6 @@ export interface Finding {
   owasp_category: string | null;
   finding_status: FindingStatus;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
   evidence: Evidence[];
 }

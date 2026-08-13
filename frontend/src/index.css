@@ -6,15 +6,15 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --ink: #171616;
-  --muted: #676360;
-  --faint: #918d88;
+  --muted: #5b5754;
+  --faint: #77736f;
   --line: #aaa6a1;
   --line-soft: #d8d4cf;
   --canvas: #e9e7e4;
   --paper: #f7f6f4;
   --paper-strong: #fff;
-  --signal: #f0321d;
-  --signal-dark: #b91f10;
+  --signal: #d62d18;
+  --signal-dark: #a61b0d;
   --signal-soft: #ffd8d2;
 }
 

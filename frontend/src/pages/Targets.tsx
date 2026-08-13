@@ -17,9 +17,9 @@ function formatDate(value: string | null | undefined): string {
 
 function Stat({ label, value, signal = false }: { label: string; value: number; signal?: boolean }) {
   return (
-    <div className="border-b border-r border-[#aaa6a1] p-4 last:border-r-0 sm:border-b-0">
+    <div className="bg-[#f7f6f4] p-4">
       <p className="vv-label">{label}</p>
-      <p className={`mt-1 text-2xl font-black tracking-[-0.04em] ${signal ? "text-[#f0321d]" : "text-[#171616]"}`}>{value}</p>
+      <p className={`mt-1 text-2xl font-black tracking-[-0.04em] ${signal ? "text-[#a61b0d]" : "text-[#171616]"}`}>{value}</p>
     </div>
   );
 }
@@ -42,10 +42,15 @@ export default function Targets() {
   const allowed = targets.filter((target) => target.is_allowed).length;
   const withOpenRisk = new Set(findings.filter((finding) => finding.finding_status === "OPEN").map((finding) => finding.target_id)).size;
   const environments = new Set(targets.map((target) => target.environment)).size;
-  const maxFindings = Math.max(1, ...targets.map((target) => findings.filter((finding) => finding.target_id === target.id).length));
+  const maxOpenFindings = Math.max(
+    1,
+    ...targets.map(
+      (target) => findings.filter((finding) => finding.target_id === target.id && finding.finding_status === "OPEN").length,
+    ),
+  );
 
   return (
-    <div className="min-h-screen bg-[#f7f6f4]">
+    <div className="bg-[#f7f6f4]">
       <PageHeader
         eyebrow="Asset scope"
         title="Registered targets"
@@ -60,7 +65,7 @@ export default function Targets() {
         </div>
       )}
 
-      <section className="grid border-b border-[#aaa6a1] grid-cols-2 sm:grid-cols-4">
+      <section className="grid grid-cols-2 gap-px border-b border-[#aaa6a1] bg-[#aaa6a1] sm:grid-cols-4">
         <Stat label="Target records" value={targets.length} />
         <Stat label="Approved" value={allowed} />
         <Stat label="With open risk" value={withOpenRisk} signal />
@@ -116,7 +121,7 @@ export default function Targets() {
                     </td>
                     <td>
                       <div className="flex items-center gap-3">
-                        <div className="h-2 w-24 bg-[#e4e1de]"><div className="h-full bg-[#f0321d]" style={{ width: `${(targetFindings.length / maxFindings) * 100}%` }} /></div>
+                        <div className="h-2 w-24 bg-[#e4e1de]"><div className="h-full bg-[#f0321d]" style={{ width: `${(open / maxOpenFindings) * 100}%` }} /></div>
                         <span className="text-[10px] font-black">{open} open</span>
                       </div>
                     </td>

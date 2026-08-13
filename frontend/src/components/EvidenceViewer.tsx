@@ -100,7 +100,11 @@ function TlsProof({ content }: { content: DataObject }) {
       </div>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Metric label="Certificate" value={compact(certificate.subject)} />
-        <Metric label="Trust" value={certificate.is_trusted === true ? "Trusted" : "Untrusted"} tone={certificate.is_trusted === true ? "default" : "signal"} />
+        <Metric
+          label="Trust"
+          value={certificate.is_trusted === true ? "Trusted" : certificate.is_trusted === false ? "Untrusted" : "Unknown"}
+          tone={certificate.is_trusted === false ? "signal" : certificate.is_trusted === true ? "default" : "quiet"}
+        />
         <Metric label="Key" value={`${compact(certificate.key_type)} ${compact(certificate.key_bits)} bit`} />
         <Metric label="TLS issue flags" value={issueFlags.length} tone={issueFlags.length ? "signal" : "default"} />
       </div>
@@ -108,10 +112,11 @@ function TlsProof({ content }: { content: DataObject }) {
         <p className="vv-label">Named vulnerability checks</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {Object.entries(vulnerabilities).map(([key, value]) => {
-            const isIssue = key === "supports_secure_renegotiation" ? value === false : value === true;
+            const known = typeof value === "boolean";
+            const isIssue = known && (key === "supports_secure_renegotiation" ? value === false : value === true);
             return (
               <span key={key} className={`px-2 py-1 text-[9px] font-bold uppercase tracking-wide ${isIssue ? "bg-[#ffd8d2] text-[#a61b0d]" : "bg-[#ece9e6] text-[#514e4b]"}`}>
-                {titleCase(key)} · {isIssue ? "issue" : "clear"}
+                {titleCase(key)} · {known ? (isIssue ? "issue" : "clear") : "unknown"}
               </span>
             );
           })}

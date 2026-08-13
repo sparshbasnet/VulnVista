@@ -310,7 +310,7 @@ function HighestRisk({ findings, targets }: { findings: Finding[]; targets: Targ
               <th>Severity</th>
               <th>Vulnerability</th>
               <th>Target</th>
-              <th>Proof</th>
+              <th>Evidence</th>
               <th className="text-right">CVSS</th>
             </tr>
           </thead>
@@ -393,7 +393,7 @@ export default function Dashboard() {
         <StatCell label="Open findings" value={String(open.length)} sub={`across ${targets.length} registered target records`} />
         <StatCell label="Critical severity" value={String(critical.length)} sub="open records · immediate action" signal />
         <StatCell label="Confirmed by probe" value={String(confirmed.length)} sub={`${suspected} suspected awaiting proof`} />
-        <StatCell label="Evidence artifacts" value={String(evidenceCount)} sub="structured proof available to inspect" />
+        <StatCell label="Evidence artifacts" value={String(evidenceCount)} sub="structured detector data available to inspect" />
       </section>
 
       <div className="grid border-b border-[#aaa6a1] lg:grid-cols-2">

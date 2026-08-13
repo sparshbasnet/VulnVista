@@ -24,6 +24,12 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-[#e9e7e4] text-[#171616] lg:grid lg:grid-cols-[232px_minmax(0,1fr)]">
+      <a
+        href="#app-content"
+        className="fixed top-2 left-2 z-[100] -translate-y-20 bg-[#171616] px-4 py-2 text-xs font-black uppercase tracking-wide text-white focus:translate-y-0"
+      >
+        Skip to content
+      </a>
       <aside className="relative hidden h-screen flex-col border-r border-[#8f8b87] bg-[#f7f6f4] lg:sticky lg:top-0 lg:flex">
         <div className="absolute inset-y-0 left-0 w-1 bg-[#f0321d]" aria-hidden="true" />
 
@@ -45,7 +51,7 @@ export default function Layout() {
               className={({ isActive }) =>
                 `${navBase} ${
                   isActive
-                    ? "bg-[#f0321d] text-white"
+                    ? "bg-[#d62d18] text-white"
                     : "text-[#171616] hover:bg-white"
                 }`
               }
@@ -117,7 +123,7 @@ export default function Layout() {
                 className={({ isActive }) =>
                   `shrink-0 border-b-2 px-3 py-2.5 text-[10px] font-extrabold uppercase tracking-[0.08em] ${
                     isActive
-                      ? "border-[#f0321d] text-[#f0321d]"
+                      ? "border-[#d62d18] text-[#a61b0d]"
                       : "border-transparent text-[#676360]"
                   }`
                 }
@@ -129,7 +135,7 @@ export default function Layout() {
           </nav>
         </header>
 
-        <main className="min-w-0 bg-[#f7f6f4]">
+        <main id="app-content" tabIndex={-1} className="min-w-0 bg-[#f7f6f4]">
           <Outlet />
         </main>
       </div>

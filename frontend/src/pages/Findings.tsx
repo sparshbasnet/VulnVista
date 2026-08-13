@@ -9,9 +9,9 @@ const severityWeight: Record<string, number> = { CRITICAL: 5, HIGH: 4, MEDIUM: 3
 
 function MiniStat({ label, value, tone = false }: { label: string; value: number; tone?: boolean }) {
   return (
-    <div className="border-b border-r border-[#aaa6a1] p-4 last:border-r-0 sm:border-b-0">
+    <div className="bg-[#f7f6f4] p-4">
       <p className="vv-label">{label}</p>
-      <p className={`mt-1 text-2xl font-black tracking-[-0.04em] ${tone ? "text-[#f0321d]" : "text-[#171616]"}`}>{value}</p>
+      <p className={`mt-1 text-2xl font-black tracking-[-0.04em] ${tone ? "text-[#a61b0d]" : "text-[#171616]"}`}>{value}</p>
     </div>
   );
 }
@@ -77,11 +77,11 @@ export default function Findings() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f6f4]">
+    <div className="bg-[#f7f6f4]">
       <PageHeader
         eyebrow="Triage"
         title="Vulnerability findings"
-        description="Prioritize scanner observations, inspect their proof, and move each record through the remediation workflow."
+        description="Prioritize scanner observations, inspect their evidence, and move each record through the remediation workflow."
         right={
           <div className="px-4 py-1 text-right">
             <p className="vv-label">Finding records</p>
@@ -97,7 +97,7 @@ export default function Findings() {
         </div>
       )}
 
-      <section className="grid border-b border-[#aaa6a1] grid-cols-2 sm:grid-cols-4">
+      <section className="grid grid-cols-2 gap-px border-b border-[#aaa6a1] bg-[#aaa6a1] sm:grid-cols-4">
         <MiniStat label="Open" value={open} tone />
         <MiniStat label="In progress" value={inProgress} />
         <MiniStat label="Remediated" value={remediated} />
@@ -137,7 +137,7 @@ export default function Findings() {
           <label>
             <span className="sr-only">Validation status</span>
             <select value={validation} onChange={(event) => setValidation(event.target.value)} className="vv-input font-bold uppercase">
-              <option value="ALL">All proof states</option>
+              <option value="ALL">All validation states</option>
               <option value="CONFIRMED">Confirmed</option>
               <option value="SUSPECTED">Suspected</option>
               <option value="INCONCLUSIVE">Inconclusive</option>

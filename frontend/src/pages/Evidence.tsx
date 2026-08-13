@@ -129,9 +129,9 @@ export default function Evidence() {
   return (
     <div className="min-h-screen bg-[#f7f6f4]">
       <PageHeader
-        eyebrow="Proof library"
+        eyebrow="Evidence library"
         title="Evidence workspace"
-        description="Inspect the exact probe output behind each finding, with detector-aware summaries and raw evidence on demand."
+        description="Inspect the stored detector evidence behind each finding, with readable summaries and raw data on demand."
         right={
           <div className="px-4 py-1 text-right">
             <p className="vv-label">Artifacts</p>
@@ -169,7 +169,7 @@ export default function Evidence() {
               <option value="ALL">All detector sources</option>
               {detectors.map((value) => <option key={value} value={value}>{humanize(value)}</option>)}
             </select>
-            <p className="mt-3 text-[9px] font-bold uppercase tracking-wide text-[#676360]">{visible.length} finding records with proof</p>
+            <p className="mt-3 text-[9px] font-bold uppercase tracking-wide text-[#676360]">{visible.length} finding records with evidence</p>
           </div>
 
           <div className="vv-scrollbar max-h-[420px] overflow-auto xl:max-h-[calc(100vh-364px)]">
@@ -243,7 +243,7 @@ export default function Evidence() {
                     {series.map((observation, index) => (
                       <div key={observation.id} className="relative min-w-[150px] border-t border-[#77736f] pt-4 pr-4">
                         <span className={`absolute -top-[5px] left-0 h-2.5 w-2.5 border-2 border-[#f7f6f4] ${observation.id === selected.id ? "bg-[#f0321d]" : "bg-[#2b2928]"}`} />
-                        <p className="text-[9px] font-black uppercase">{index === 0 ? "First observed" : "Observed again"}</p>
+                        <p className="text-[9px] font-black uppercase">{index === 0 ? "Earliest stored" : "Later stored"}</p>
                         <p className="mt-1 text-[9px] text-[#676360]">{formatDate(observation.created_at)}</p>
                         <p className="mt-1 text-[8px] font-bold uppercase text-[#918d88]">{humanize(observation.validation_status)}</p>
                       </div>
@@ -269,7 +269,7 @@ export default function Evidence() {
                     <option value="FALSE_POSITIVE">False positive</option>
                   </select>
                   <p className="mt-2 text-[9px] leading-relaxed text-[#676360]">
-                    {saving ? "Saving…" : `Record updated ${formatDate(selected.updated_at)}. Workflow state is separate from scanner proof.`}
+                    {saving ? "Saving…" : `Record updated ${formatDate(selected.updated_at ?? selected.created_at)}. Workflow state is separate from scanner validation.`}
                   </p>
                   {statusError && <p className="mt-2 text-[9px] font-bold text-[#b91f10]">{statusError}</p>}
                 </div>
@@ -277,7 +277,7 @@ export default function Evidence() {
 
               <section className="space-y-5 p-4 sm:p-6">
                 <div>
-                  <h3 className="text-xs font-black uppercase tracking-[0.1em]">Captured proof</h3>
+                  <h3 className="text-xs font-black uppercase tracking-[0.1em]">Captured evidence</h3>
                   <p className="mt-1 text-[10px] text-[#676360]">Readable detector summary first; full JSON is collapsed until requested.</p>
                 </div>
                 {(selected.evidence ?? []).map((artifact, index) => (

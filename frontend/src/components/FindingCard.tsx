@@ -7,7 +7,7 @@ import EvidenceViewer from "./EvidenceViewer";
 
 const severityTone: Record<string, string> = {
   CRITICAL: "bg-[#b71f0e] text-white",
-  HIGH: "bg-[#f0321d] text-white",
+  HIGH: "bg-[#d62d18] text-white",
   MEDIUM: "bg-[#ffb2a8] text-[#76180e]",
   LOW: "bg-[#d5d1cd] text-[#393634]",
   INFO: "bg-[#e8e5e1] text-[#514e4b]",
@@ -25,7 +25,8 @@ function humanize(value: string): string {
   return value.replace(/_/g, " ");
 }
 
-function formatDate(value: string): string {
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "Not recorded";
   return new Intl.DateTimeFormat(undefined, {
     day: "2-digit",
     month: "short",
@@ -50,7 +51,9 @@ export default function FindingCard({
   const [current, setCurrent] = useState(finding);
   const [saving, setSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const evidence = current.evidence ?? [];
+  const evidence = [...(current.evidence ?? [])].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
 
   useEffect(() => setCurrent(finding), [finding]);
   useEffect(() => {
@@ -95,7 +98,7 @@ export default function FindingCard({
           {humanize(current.finding_status)}
         </span>
         <span className="flex shrink-0 items-center gap-2 text-[9px] font-bold uppercase text-[#676360]">
-          <span>{evidence.length} proof</span>
+          <span>{evidence.length} evidence</span>
           <span className={`text-sm transition-transform ${expanded ? "rotate-45" : ""}`} aria-hidden="true">＋</span>
         </span>
       </button>
@@ -143,7 +146,7 @@ export default function FindingCard({
                 ))}
               </select>
               <p className="mt-2 min-h-4 text-[9px] leading-relaxed text-[#676360]">
-                {saving ? "Saving status…" : `Record updated ${formatDate(current.updated_at)}. Earlier status events are not stored.`}
+                {saving ? "Saving status…" : `Record updated ${formatDate(current.updated_at ?? current.created_at)}. Earlier status events are not stored.`}
               </p>
               {statusError && <p className="mt-2 text-[10px] font-bold text-[#b91f10]">{statusError}</p>}
             </div>
@@ -155,7 +158,7 @@ export default function FindingCard({
               <p className="mt-1.5 text-[10px] font-black">{formatDate(current.created_at)}</p>
             </div>
             <div className="bg-[#f7f6f4] p-4">
-              <p className="vv-label">02 · Scanner proof</p>
+              <p className="vv-label">02 · Scanner validation</p>
               <p className={`mt-1.5 text-[10px] font-black ${current.validation_status === "CONFIRMED" ? "text-[#f0321d]" : "text-[#514e4b]"}`}>
                 {humanize(current.validation_status)}
               </p>
@@ -177,7 +180,7 @@ export default function FindingCard({
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="vv-label">Evidence artifacts</p>
-                <p className="mt-1 text-[10px] text-[#676360]">Structured proof captured by {humanize(current.detector_id)}</p>
+                <p className="mt-1 text-[10px] text-[#676360]">Stored detector evidence captured by {humanize(current.detector_id)}</p>
               </div>
               <Link to={`/evidence?finding=${current.id}`} className="text-[9px] font-black uppercase tracking-[0.08em] text-[#f0321d] hover:underline">
                 Open evidence workspace →
