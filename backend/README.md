@@ -49,6 +49,26 @@ uv run python scripts/manual_check_sensitive_files.py
 uv run python scripts/manual_check_sensitive_files.py --base-url http://localhost:3000
 ```
 
+`vulnerable_services` needs `nmap` and `searchsploit` on PATH (both already in the
+backend Docker image; install locally too if running outside Docker — see the
+Dockerfile for the exploitdb clone `searchsploit` needs) and takes longer since it's a
+real port scan plus a per-service NVD lookup:
+
+```bash
+docker compose -f lab/docker-compose.yml up -d metasploitable2
+cd backend
+uv run python scripts/manual_check_vulnerable_services.py metasploitable2
+uv run python scripts/manual_check_vulnerable_services.py --ports 1-1000 metasploitable2
+```
+
+CVE matching for this detector comes from two layers: a small curated table for
+lab-only backdoors NVD has no CVE for (vsftpd/ProFTPD/UnrealIRCd source-compromise
+backdoors, the ingreslock listener) plus insecure-by-design protocols (telnet,
+rsh/rlogin/rexec, unauthenticated VNC); and the NVD CVE API, queried by CPE, for
+everything else — which is what makes it work against services beyond the lab's known
+list. NVD lookups work unauthenticated (5 req/30s) but go faster with a free key from
+<https://nvd.nist.gov/developers/request-an-api-key> set as `NVD_API_KEY` in `.env`.
+
 This prints the detector's verdict, severity, confidence, CWE/CVSS, and the exact
 evidence collected (e.g. which files were confirmed exposed) — useful for confirming a
 new or changed detector behaves correctly against the real target before relying on

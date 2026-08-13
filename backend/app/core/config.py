@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     zap_api_url: str = "http://zap:8080"
     zap_api_key: str = "vulnvista-dev-key"
 
+    # Optional — raises the NVD CVE API's rate limit from 5 to 50 requests per
+    # rolling 30s window. Free signup at https://nvd.nist.gov/developers/request-an-api-key.
+    # Unset means the vulnerable_services detector paces itself to the unauthenticated limit.
+    nvd_api_key: str | None = None
+
     # Hosts that are auto-approved for scanning with no user acknowledgment —
     # the bundled lab containers. Any other host can still be scanned, but only
     # once the requester explicitly confirms they're authorized to test it
