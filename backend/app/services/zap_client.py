@@ -6,6 +6,10 @@ from zapv2 import ZAPv2
 
 from app.core.config import get_settings
 
+from zapv2 import ZAPv2
+
+from app.core.config import settings
+
 
 class ZAPClient:
     def __init__(self):

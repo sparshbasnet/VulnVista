@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { api } from "../services/api";
 import type { Target } from "../types";
 
+function authorizationLabel(t: Target): string {
+  if (t.is_allowed && !t.authorization_confirmed) return "Trusted lab host";
+  if (t.is_allowed && t.authorization_confirmed) return "Self-declared";
+  return "Not approved";
+}
+
 export default function Targets() {
   const [targets, setTargets] = useState<Target[]>([]);
 
@@ -19,7 +25,7 @@ export default function Targets() {
               <th className="px-4 py-2">Name</th>
               <th className="px-4 py-2">Type</th>
               <th className="px-4 py-2">Base URL</th>
-              <th className="px-4 py-2">Approved</th>
+              <th className="px-4 py-2">Authorization</th>
             </tr>
           </thead>
           <tbody>
@@ -28,7 +34,7 @@ export default function Targets() {
                 <td className="px-4 py-2">{t.name}</td>
                 <td className="px-4 py-2">{t.target_type}</td>
                 <td className="px-4 py-2 text-slate-400">{t.base_url ?? "—"}</td>
-                <td className="px-4 py-2">{t.is_allowed ? "Yes" : "No"}</td>
+                <td className="px-4 py-2">{authorizationLabel(t)}</td>
               </tr>
             ))}
             {targets.length === 0 && (

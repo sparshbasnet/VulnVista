@@ -58,8 +58,8 @@ flowchart TD
 | --- | --- | --- |
 | DVWA | Adjustable-difficulty vulnerability exercises | [lab/docker-compose.yml](lab/docker-compose.yml) |
 | OWASP Juice Shop | Modern Node.js app covering the OWASP Top 10 | [lab/docker-compose.yml](lab/docker-compose.yml) |
-| Metasploitable2 | Known-vulnerable service catalogue | [lab/METASPLOITABLE.md](lab/METASPLOITABLE.md) (VM — no official Docker image) |
-| Local TLS test service | Weak TLS/certificate scenarios | Planned; see implementation plan §8, Week 1 |
+| Metasploitable2 | Known-vulnerable service catalogue | [lab/docker-compose.yml](lab/docker-compose.yml) (community image; VM alternative in [lab/METASPLOITABLE.md](lab/METASPLOITABLE.md)) |
+| Local TLS test service | Weak TLS/certificate scenarios | [lab/tls-test/](lab/tls-test/) via [lab/docker-compose.yml](lab/docker-compose.yml) |
 
 All targets run on an isolated `vulnvista_net` Docker network with no route to production infrastructure. See [lab/README.md](lab/README.md) for URLs, default credentials, and safety controls.
 

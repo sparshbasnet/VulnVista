@@ -1,16 +1,57 @@
 # Running Metasploitable2 for VulnVista
 
-Metasploitable2 is **not** run via Docker Compose in this project. Rapid7 only
-distributes it as a VMware/VirtualBox disk image — there is no official Docker image,
-and community Docker ports of it are unofficial repackagings of a deliberately
-insecure multi-service Linux box, not something to trust or depend on for a graded
-project. Run it as a VM instead.
-
 > [!CAUTION]
 > Metasploitable2 is intentionally riddled with vulnerabilities, including remote root
 > access. Never expose it to any network beyond your isolated lab.
 
-## 1. Download
+## Docker (default — uniform with the rest of the lab)
+
+Rapid7 only distributes Metasploitable2 officially as a VMware/VirtualBox disk image —
+there is no *official* Docker image. For local development and this project's Docker
+Compose-based lab, we use [`tleemcjr/metasploitable2`](https://hub.docker.com/r/tleemcjr/metasploitable2)
+(100K+ pulls), a community repackaging of the same rootfs the official VM ships. It's
+wired into [`lab/docker-compose.yml`](./docker-compose.yml) alongside DVWA and Juice
+Shop, so all three lab targets start and stop the same way:
+
+```bash
+docker compose --env-file .env -f lab/docker-compose.yml up -d
+```
+
+The container runs the image's own `/bin/services.sh` boot script to start the
+vulnerable services (this happens automatically via the compose file's `command`) —
+it's not a plain "run the image" situation like DVWA/Juice Shop. Default login for any
+service requiring auth is `msfadmin` / `msfadmin`.
+
+Two services **don't** come up under Docker and that's expected, not a bug: **bind9**
+(DNS) and **NFS** both need kernel modules the container can't load. Every other
+classic Metasploitable2 service (ftp, ssh, telnet, smtp, samba, mysql, postgresql,
+distccd, the ingreslock/vsftpd/UnrealIRCd backdoors, tomcat, etc.) runs normally.
+
+**Reachability:**
+
+- From the backend container (i.e. what detectors use): `metasploitable2:<real-port>`
+  on `vulnvista_net` — e.g. `metasploitable2:21` for FTP. Host port publishing below
+  doesn't affect this.
+- From the Docker host (for manual poking — `nmap`, `curl`, `nc`, etc.): each service's
+  host port is its real port **+10000** (chosen purely to dodge collisions with
+  anything already running on the host — 22, 3306, and 5432 in particular are common).
+  So SSH is `localhost:10022`, MySQL is `localhost:13306`, PostgreSQL is
+  `localhost:15432`, and so on — see the full mapping and what each port is in
+  [`docker-compose.yml`](./docker-compose.yml)'s `metasploitable2` service.
+
+Register it as a `Target` with `target_type: metasploitable2` and `base_url` pointed
+at whichever service/port you're scanning (the detector will need per-service
+handling since, unlike a single web app, this target exposes many independent
+services rather than one HTTP surface).
+
+## VM (higher-fidelity alternative)
+
+If you want the exact, official Rapid7 image instead of a community Docker
+repackaging — e.g. for a graded deliverable where fidelity to the real target
+matters, or if the Docker image's missing bind9/NFS services matter for your
+detector — run it as a VM instead.
+
+### 1. Download
 
 Get the official image from Rapid7's SourceForge listing:
 <https://sourceforge.net/projects/metasploitable/files/Metasploitable2/>
@@ -18,7 +59,7 @@ Get the official image from Rapid7's SourceForge listing:
 It ships as a zipped VMware disk (`.vmdk`) — this also imports cleanly into
 VirtualBox.
 
-## 2. Import
+### 2. Import
 
 **VirtualBox:**
 
@@ -32,7 +73,7 @@ VirtualBox.
 1. `File > Open`, select the extracted `Metasploitable.vmx` (or create a new VM
    pointing at the `.vmdk` if only the disk is provided).
 
-## 3. Network configuration — making it reachable from VulnVista
+### 3. Network configuration — making it reachable from VulnVista
 
 The backend container talks to lab targets over the `vulnvista_net` Docker network
 (a bridge network on the Docker host), so a VM needs a network path into that bridge:
@@ -49,19 +90,11 @@ The backend container talks to lab targets over the `vulnvista_net` Docker netwo
 - Either way: **do not** attach it to a network segment shared with anything else on
   your machine or LAN that isn't part of this lab.
 
-## 4. Boot and verify
+### 4. Boot and verify
 
 1. Start the VM. Default login is `msfadmin` / `msfadmin`.
 2. Run `ifconfig` inside the VM to confirm its IP address.
 3. From the Docker host, confirm reachability: `nmap -sV <metasploitable-ip>` should
    show the expected vulnerable services (FTP, SSH, Telnet, SMB, MySQL, etc.).
-4. Register that IP as a `Target` in VulnVista (`target_type` e.g. `metasploitable2`,
+4. Register that IP as a `Target` in VulnVista (`target_type: metasploitable2`,
    `is_allowed: true`) once you're ready to scan it.
-
-## Unofficial alternative (use at your own risk)
-
-Community-maintained Docker images of Metasploitable2 exist (e.g. searchable on
-Docker Hub), but they are unofficial repackagings with no guarantee of fidelity to
-the real target, and some have been abandoned or altered. If you use one anyway,
-treat it exactly like the VM: isolate it on `vulnvista_net` (or a network reachable
-from it) and never expose it beyond the lab.
