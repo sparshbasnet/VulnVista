@@ -12,8 +12,19 @@ export interface Target {
   ip_address: string | null;
   environment: string;
   is_allowed: boolean;
+  authorization_confirmed: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface TargetCreatePayload {
+  name: string;
+  target_type: string;
+  base_url: string;
+  ip_address?: string | null;
+  environment?: string;
+  authorization_confirmed?: boolean;
+  scan_config?: Record<string, unknown>;
 }
 
 export interface Scan {
