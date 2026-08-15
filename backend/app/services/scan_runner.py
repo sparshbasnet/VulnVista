@@ -57,26 +57,37 @@ async def run_scan(scan_id: uuid.UUID) -> None:
         detectors = get_detectors_for_profile(scan.scan_profile)
 
         errors = 0
+        mixed_outcomes = False
         try:
             for detector in detectors:
+                detector_had_error = False
+                detector_had_non_error = False
                 try:
-                    result = await detector.check(context)
-                    result = await detector.validate(result)
+                    results = await detector.check_many(context)
                 except Exception as exc:  # a detector bug must not sink the whole scan
                     logger.exception("detector %s crashed", detector.detector_id)
                     errors += 1
                     scan.error_summary = f"{detector.detector_id}: {exc}"
                     continue
 
-                if result.validation_status == "ERROR":
+                for raw_result in results:
+                    result = await detector.validate(context, raw_result)
+                    if result.validation_status == "ERROR":
+                        detector_had_error = True
+                        scan.error_summary = result.evidence_summary
+                    else:
+                        detector_had_non_error = True
+                        if result.validation_status in _REPORTABLE:
+                            _persist_finding(db, detector, scan, target, result)
+
+                if detector_had_error:
                     errors += 1
-                    scan.error_summary = result.evidence_summary
-                elif result.validation_status in _REPORTABLE:
-                    _persist_finding(db, detector, scan, target, result)
+                if detector_had_error and detector_had_non_error:
+                    mixed_outcomes = True
 
             if errors == 0:
                 scan.status = ScanStatus.COMPLETED
-            elif errors < len(detectors):
+            elif errors < len(detectors) or mixed_outcomes:
                 scan.status = ScanStatus.PARTIAL
             else:
                 scan.status = ScanStatus.FAILED

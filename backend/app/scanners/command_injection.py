@@ -218,22 +218,35 @@ def _candidates_from_form(form: FormSpec) -> list[Candidate]:
     return candidates
 
 
-def _explicit_candidate(base: str, cfg: dict[str, Any]) -> Candidate | None:
-    """Build the single targeted candidate when the caller (a lab preset or an
-    explicit ScanContext.extra override) names an exact parameter/path."""
+def _explicit_candidates(base: str, cfg: dict[str, Any]) -> list[Candidate]:
+    """Build targeted candidates when the caller (a lab preset or explicit
+    ScanContext.extra overrides) names exact parameter/path values. Accepts
+    either a single path/url (``exec_path``/``injection_url``, kept for
+    backward compatibility) or a list of them (``exec_paths``/
+    ``injection_urls``) for targets with more than one known injection point."""
     if "parameter" not in cfg:
-        return None
-    if "injection_url" in cfg:
-        url = cfg["injection_url"]
+        return []
+
+    urls: list[str] = []
+    if "injection_urls" in cfg:
+        urls.extend(str(value) for value in cfg["injection_urls"])
+    elif "exec_paths" in cfg:
+        urls.extend(f"{base}{value}" for value in cfg["exec_paths"])
+    elif "injection_url" in cfg:
+        urls.append(str(cfg["injection_url"]))
     elif "exec_path" in cfg:
-        url = f"{base}{cfg['exec_path']}"
+        urls.append(f"{base}{cfg['exec_path']}")
     else:
-        return None
+        return []
+
     fixed = {}
     if cfg.get("submit_field"):
         fixed[cfg["submit_field"]] = cfg.get("submit_value", "")
     method = cfg.get("method", "POST")
-    return Candidate(method=method, url=url, param=cfg["parameter"], fixed_fields=fixed)
+    return [
+        Candidate(method=method, url=url, param=cfg["parameter"], fixed_fields=fixed)
+        for url in urls
+    ]
 
 
 @dataclass
@@ -266,6 +279,15 @@ class CommandInjectionDetector(BaseDetector):
     vulnerability_type = "command_injection"
 
     async def check(self, context: ScanContext) -> DetectorResult:
+        """Compatibility wrapper: return the first detected result, else the
+        last probed result (matching historical single-result behavior)."""
+        results = await self.check_many(context)
+        for result in results:
+            if result.detected:
+                return result
+        return results[-1]
+
+    async def check_many(self, context: ScanContext) -> list[DetectorResult]:
         parsed = urlparse(context.base_url)
         host = parsed.hostname or ""
         base = f"{parsed.scheme}://{parsed.netloc}"
@@ -282,9 +304,9 @@ class CommandInjectionDetector(BaseDetector):
                 if cfg.get("login_path") and cfg.get("username") and cfg.get("password"):
                     await self._authenticate(client, base, host, cfg)
 
-                explicit = _explicit_candidate(base, cfg)
-                if explicit is not None:
-                    candidates = [explicit]
+                explicit = _explicit_candidates(base, cfg)
+                if explicit:
+                    candidates = explicit
                     source = "explicit configuration"
                 else:
                     candidates = await self._discover_candidates(
@@ -300,23 +322,27 @@ class CommandInjectionDetector(BaseDetector):
                             "reachable from there."
                         )
 
-                candidate = evidence = decision = None
-                for raw_candidate in candidates[: cfg["max_candidates"]]:
+                results: list[DetectorResult] = []
+                active_candidates = candidates[: cfg["max_candidates"]]
+                for idx, raw_candidate in enumerate(active_candidates, start=1):
                     candidate = await self._prime_candidate(client, raw_candidate, cfg)
                     decision, evidence = await self._probe(client, candidate, cfg)
-                    if decision.detected:
-                        break
+                    evidence["candidates_probed"] = len(active_candidates)
+                    evidence["candidate_source"] = source
+                    evidence["candidate_index"] = idx
+                    results.append(self._result(candidate, decision, evidence))
 
-                assert candidate is not None and decision is not None and evidence is not None
-                evidence["candidates_probed"] = min(len(candidates), cfg["max_candidates"])
-                evidence["candidate_source"] = source
-                return self._result(context, candidate, decision, evidence)
+                if not results:
+                    raise DetectorError("No probe candidates were available after discovery.")
+                return results
         except DetectorError as exc:
-            return self._error_result(context, str(exc))
+            return [self._error_result(context, str(exc))]
         except httpx.HTTPError as exc:
-            return self._error_result(
-                context, f"Could not reach the target ({type(exc).__name__}: {exc})."
-            )
+            return [
+                self._error_result(
+                    context, f"Could not reach the target ({type(exc).__name__}: {exc})."
+                )
+            ]
 
     async def _authenticate(
         self, client: httpx.AsyncClient, base: str, host: str, cfg: dict[str, Any]
@@ -454,7 +480,6 @@ class CommandInjectionDetector(BaseDetector):
 
     def _result(
         self,
-        context: ScanContext,
         candidate: Candidate,
         decision: Decision,
         evidence: dict[str, Any],
