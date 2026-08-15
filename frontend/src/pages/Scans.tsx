@@ -25,7 +25,9 @@ type ProfileId =
   | "weak_auth"
   | "sensitive_files"
   | "vulnerable_services"
-  | "weak_tls";
+  | "weak_tls"
+  | "csrf"
+  | "xxe";
 interface ProfileConfig {
   label: string;
   targetType: string;
@@ -107,6 +109,35 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "certificate issues (self-signed, expired, weak signature/key), and known TLS flaws " +
       "(Heartbleed, ROBOT, CCS injection) — every check is a passive protocol probe.",
   },
+  csrf: {
+    label: "Cross-Site Request Forgery",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for CSRF",
+    scanningLabel: "Inspecting anti-CSRF tokens & attempting a forged request…",
+    noFindingLabel: "No CSRF weakness detected on this target",
+    help:
+      "Works against any target: paste its URL and the scanner discovers a state-changing " +
+      "form, checks whether it carries a real, session-bound anti-CSRF token, and — when a " +
+      "known-safe/resettable action is configured (as the bundled DVWA lab is) — replays it " +
+      "with the token dropped and the Origin/Referer spoofed to prove forgeability, then " +
+      "restores the original state. http://dvwa is a bundled lab target requiring no setup.",
+  },
+  xxe: {
+    label: "XML External Entity (XXE)",
+    targetType: "webapp",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan for XXE",
+    scanningLabel: "Submitting a canary XML payload & waiting for a callback…",
+    noFindingLabel: "No XML external entity processing detected on this target",
+    help:
+      "There's no generic way to auto-discover an XML-accepting endpoint, so this needs " +
+      "either the bundled Juice Shop lab target (its B2B order API is used automatically, " +
+      "zero setup) or an explicit XML endpoint path in Advanced below. The scanner submits a " +
+      "document declaring an external entity that points at a canary listener it hosts itself " +
+      "and checks whether the target's parser actually fetches it — it never reads local files " +
+      "or real data on the target.",
+  },
 };
 
 const TRUSTED_HOSTS = new Set([
@@ -161,6 +192,7 @@ export default function Scans() {
   const [advCookie, setAdvCookie] = useState("");
   const [advParameter, setAdvParameter] = useState("");
   const [advPath, setAdvPath] = useState("");
+  const [advXmlEndpoint, setAdvXmlEndpoint] = useState("");
   const [busy, setBusy] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -194,6 +226,7 @@ export default function Scans() {
     setAdvCookie("");
     setAdvParameter("");
     setAdvPath("");
+    setAdvXmlEndpoint("");
   }
 
   function selectProfile(next: ProfileId) {
@@ -278,6 +311,7 @@ export default function Scans() {
         if (/^https?:\/\//i.test(advPath.trim())) scanConfig.injection_url = advPath.trim();
         else scanConfig.exec_path = advPath.trim();
       }
+      if (advXmlEndpoint.trim()) scanConfig.xml_endpoint = advXmlEndpoint.trim();
 
       const p1 = begin(existingTarget ? `Using target ${existingTarget.name}…` : `Registering target ${url.trim()}…`);
       const target = existingTarget ?? await api.createTarget({
@@ -489,6 +523,9 @@ export default function Scans() {
                       <input aria-label="Login path override" type="text" value={advLoginPath} onChange={(event) => setAdvLoginPath(event.target.value)} placeholder="Login path override (e.g. /login) — leave blank to auto-discover" className="vv-input sm:col-span-2" />
                       <input aria-label="Known valid username or email" type="text" value={advKnownUsername} onChange={(event) => setAdvKnownUsername(event.target.value)} placeholder="Known valid username/email (optional — enables enumeration check)" className="vv-input sm:col-span-2" />
                     </>
+                  )}
+                  {profile === "xxe" && (
+                    <input aria-label="XML endpoint path" type="text" value={advXmlEndpoint} onChange={(event) => setAdvXmlEndpoint(event.target.value)} placeholder="XML endpoint path (e.g. /api/import) — required unless targeting the Juice Shop lab" className="vv-input sm:col-span-2" />
                   )}
                   <input aria-label="Session cookie" type="text" value={advCookie} onChange={(event) => setAdvCookie(event.target.value)} placeholder="Session cookie (name=value; name2=value2)" className="vv-input sm:col-span-2" />
                   <input aria-label="Exact parameter name" type="text" value={advParameter} onChange={(event) => setAdvParameter(event.target.value)} placeholder="Exact parameter name (e.g. ip)" className="vv-input" />

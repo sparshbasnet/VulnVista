@@ -29,6 +29,15 @@ services:
     image: bkimminich/juice-shop
     container_name: vulnvista_juice_shop
     restart: unless-stopped
+    environment:
+      # Juice Shop disables its own "unsafe" challenges (XXE, SSTi,
+      # deserialization, some NoSQLi) by default whenever it detects it's
+      # running in a container, since those exploits can crash shared/free
+      # hosting. This is an isolated local lab network with no public
+      # exposure, so it's safe to re-enable them — required for the xxe
+      # detector's file-upload probe to reach real parsing instead of
+      # short-circuiting with a generic 410.
+      NODE_ENV: unsafe
     ports:
       - "${JUICE_SHOP_PORT:-3000}:3000"
     volumes:
