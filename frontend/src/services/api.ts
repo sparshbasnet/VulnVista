@@ -1,5 +1,6 @@
 import type {
   Finding,
+  FindingStatus,
   Scan,
   Target,
   TargetCreatePayload,
@@ -54,4 +55,9 @@ export const api = {
     const query = new URLSearchParams(params as Record<string, string>).toString();
     return request<Finding[]>(`/findings${query ? `?${query}` : ""}`);
   },
+  updateFindingStatus: (id: string, finding_status: FindingStatus) =>
+    request<Finding>(`/findings/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ finding_status }),
+    }),
 };

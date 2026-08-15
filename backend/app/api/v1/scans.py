@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.auth_deps import require_operator
 from app.api.deps import get_db
@@ -59,5 +60,8 @@ async def get_scan(scan_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Sc
 async def get_scan_findings(
     scan_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 ) -> list[Finding]:
-    result = await db.execute(select(Finding).where(Finding.scan_id == scan_id))
+    query = (
+        select(Finding).options(selectinload(Finding.evidence)).where(Finding.scan_id == scan_id)
+    )
+    result = await db.execute(query)
     return list(result.scalars().all())

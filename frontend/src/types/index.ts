@@ -59,6 +59,14 @@ export interface Scan {
   created_at: string;
 }
 
+export interface Evidence {
+  id: string;
+  finding_id: string;
+  evidence_type: string;
+  content: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface Finding {
   id: string;
   scan_id: string;
@@ -79,4 +87,6 @@ export interface Finding {
   owasp_category: string | null;
   finding_status: FindingStatus;
   created_at: string;
+  updated_at?: string;
+  evidence: Evidence[];
 }
