@@ -1,5 +1,4 @@
 import asyncio
-import json
 import re
 from urllib.parse import urlparse
 
@@ -91,7 +90,8 @@ async def test_check_confirms_oob_hit_on_generic_raw_endpoint(
         body = request.read().decode()
         match = _SYSTEM_URL_RE.search(body)
         assert match is not None
-        _background_tasks.add(asyncio.ensure_future(_fetch_via_raw_socket(match.group(1))))
+        if match.group(1).startswith("http://"):
+            _background_tasks.add(asyncio.ensure_future(_fetch_via_raw_socket(match.group(1))))
         return httpx.Response(200, text="<result>accepted</result>")
 
     _mock_client(monkeypatch, handler)
@@ -104,6 +104,7 @@ async def test_check_confirms_oob_hit_on_generic_raw_endpoint(
                 "request_style": "raw",
                 "oob_wait_seconds": 2.0,
                 "callback_host": "127.0.0.1",
+                "local_file_path": None,
             },
         )
     )
@@ -113,6 +114,44 @@ async def test_check_confirms_oob_hit_on_generic_raw_endpoint(
     assert result.evidence["oob_hit"] is True
     assert result.evidence["request_style"] == "raw"
     assert result.evidence["endpoint_discovery"] == "explicit configuration"
+
+
+async def test_check_confirms_local_file_fingerprint_reflected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mirrors what Juice Shop's real libxmljs2-based parser actually does:
+    it never makes a network call for an http:// SYSTEM identifier, but it
+    does resolve file:// ones and echo the parsed document (with the entity
+    substituted) back in an error message."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = request.read().decode()
+        match = _SYSTEM_URL_RE.search(body)
+        assert match is not None
+        if match.group(1).startswith("file://"):
+            return httpx.Response(
+                410, text='Error: deprecated: <foo>PRETTY_NAME="Debian GNU/Linux"</foo>'
+            )
+        return httpx.Response(410, text="Error: deprecated: failed to load: No such file")
+
+    _mock_client(monkeypatch, handler)
+    result = await XXEDetector().check(
+        ScanContext(
+            target_id="t1",
+            base_url="https://example.test",
+            extra={
+                "xml_endpoint": "/api/import",
+                "request_style": "raw",
+                "oob_wait_seconds": 0.1,
+                "callback_host": "127.0.0.1",
+            },
+        )
+    )
+
+    assert result.validation_status == "CONFIRMED"
+    assert result.evidence["oob_hit"] is False
+    assert result.evidence["local_file_reflected"] is True
+    assert result.evidence["in_band_reflected"] is True
 
 
 async def test_check_not_detected_when_entity_is_never_resolved(
@@ -136,32 +175,37 @@ async def test_check_not_detected_when_entity_is_never_resolved(
 
     assert result.validation_status == "NOT_DETECTED"
     assert result.evidence["oob_hit"] is False
+    assert result.evidence["local_file_reflected"] is False
     assert result.evidence["in_band_reflected"] is False
 
 
-async def test_check_uses_juice_shop_lab_preset_json_field(
+async def test_check_uses_juice_shop_lab_preset_multipart_upload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/b2b/v2/orders"
-        body = json.loads(request.read())
-        match = _SYSTEM_URL_RE.search(body["orderLinesData"])
+        assert request.url.path == "/file-upload"
+        body = request.read().decode(errors="ignore")
+        match = _SYSTEM_URL_RE.search(body)
         assert match is not None
-        _background_tasks.add(asyncio.ensure_future(_fetch_via_raw_socket(match.group(1))))
-        return httpx.Response(200, json={"status": "accepted"})
+        if match.group(1).startswith("file://"):
+            return httpx.Response(
+                410, text='deprecated: <foo>PRETTY_NAME="Distroless"</foo> (probe.xml)'
+            )
+        return httpx.Response(410, text="deprecated: failed to load: No such file (probe.xml)")
 
     _mock_client(monkeypatch, handler)
     result = await XXEDetector().check(
         ScanContext(
             target_id="t1",
             base_url="http://juice-shop:3000",
-            extra={"oob_wait_seconds": 2.0, "callback_host": "127.0.0.1"},
+            extra={"oob_wait_seconds": 0.1},
         )
     )
 
     assert result.validation_status == "CONFIRMED"
     assert result.evidence["endpoint_discovery"] == "lab preset"
-    assert result.evidence["request_style"] == "json_field"
+    assert result.evidence["request_style"] == "multipart"
+    assert result.evidence["local_file_reflected"] is True
 
 
 async def test_check_errors_without_xml_endpoint_or_preset(

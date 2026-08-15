@@ -3,36 +3,40 @@
 Generic and evidence-based, same philosophy as the other detectors — but XXE
 needs a different proof technique than a marker echoed in the same response
 (command_injection) or a login differential (weak_auth): the safe way to
-prove a parser resolves *external* entities, without ever touching the
-target's filesystem or any sensitive resource, is to make it fetch a
-harmless resource *this detector itself hosts* and observe whether the fetch
-actually happens. That satisfies the plan's acceptance criteria directly:
-"confirms XXE only when processing of a harmless controlled external
-entity/resource is demonstrated" — never a system file, never real data.
+prove a parser resolves *external* entities, without ever reading real or
+sensitive data off the target, is to make it resolve a harmless resource and
+observe whether that resolution actually happened. Two independent, safe
+probes are run — either signal alone is sufficient:
 
-Technique:
-  1. Start a tiny local HTTP listener (stdlib asyncio, no framework) bound to
-     an ephemeral port, serving one canary response containing a random
-     marker.
-  2. Submit XML to the target's XML-accepting endpoint with a DOCTYPE
-     declaring a external entity whose SYSTEM identifier is that listener's
-     URL, referenced from the document body.
-  3. Two independent signals, either one is sufficient:
-       - Out-of-band: did the listener actually receive a request? This is
-         the strongest possible proof — the target's own XML parser made a
-         network call to a URL it was only ever given inside the XML, and
-         nothing else in the payload could have triggered that.
-       - In-band: does the target's own HTTP response reflect the marker
-         text? Some parsers echo the resolved entity content back (e.g. in a
-         validation error), which is an equally strong signal on its own.
+  1. Out-of-band callback: submit XML with a DOCTYPE declaring an external
+     entity whose SYSTEM identifier is a URL served by a tiny local HTTP
+     listener this detector starts itself (stdlib asyncio, ephemeral port).
+     If the listener receives a request, the target's parser made a network
+     call to a URL it was only ever given inside the XML — proof positive,
+     and nothing sensitive was ever involved since the resource is ours.
+     Some XML libraries only resolve `file://` SYSTEM identifiers and never
+     make network calls at all (this is the common case in practice), so
+     this probe alone under-detects — hence probe 2.
+
+  2. Harmless local file reflection: submit a second document whose external
+     entity points at `file:///etc/os-release` (configurable) — present on
+     virtually every Linux container and containing nothing but public OS
+     branding info, never sensitive data. If a distinctive fingerprint from
+     that file's known content (`PRETTY_NAME=` by default) shows up in the
+     response, the parser resolved and echoed it back (e.g. in a validation
+     error that includes the parsed document). This directly satisfies the
+     plan's acceptance criteria: "confirms XXE only when processing of a
+     harmless controlled external entity/resource is demonstrated" — the
+     file is deliberately a non-sensitive one, never a real system-sensitive
+     path like /etc/passwd.
 
 There is no generic way to auto-discover "the XML endpoint" the way a login
 form or an injectable field can be discovered from HTML, so a target must
 supply one (or match a bundled lab preset). The bundled Juice Shop lab
-container's B2B order endpoint is a known target for this class of test —
-see LAB_PRESETS — but any target can be pointed at via `xml_endpoint` (+
-`request_style`: "raw" | "json_field" | "multipart") in ScanContext.extra
-(populated from Target.scan_config).
+container's deprecated B2B file-upload endpoint is a known target for this
+class of test — see LAB_PRESETS — but any target can be pointed at via
+`xml_endpoint` (+ `request_style`: "raw" | "json_field" | "multipart") in
+ScanContext.extra (populated from Target.scan_config).
 
 The callback listener defaults to being reachable at the backend container's
 own Docker Compose service name (`backend`), which the bundled lab
@@ -57,6 +61,11 @@ GENERIC_DEFAULTS: dict[str, Any] = {
     "oob_wait_seconds": 3.0,
     "request_style": "raw",
     "callback_host": "backend",
+    # A file present on virtually every Linux container, containing nothing
+    # but public OS branding info — never sensitive data. Set either to a
+    # falsy value in scan config to skip this probe.
+    "local_file_path": "/etc/os-release",
+    "local_file_fingerprint": "PRETTY_NAME=",
 }
 
 # Preset for the bundled Juice Shop lab container's deprecated B2B file
@@ -210,35 +219,45 @@ class XXEDetector(BaseDetector):
         marker = f"VULNVISTA-XXE-{secrets.token_hex(4)}"
 
         try:
-            async with _CanaryServer(marker) as canary:
-                callback_url = (
-                    f"http://{cfg['callback_host']}:{canary.port}/{secrets.token_hex(3)}"
-                )
-                payload = build_payload(callback_url)
-
-                async with httpx.AsyncClient(
-                    timeout=cfg["request_timeout"],
-                    follow_redirects=True,
-                    cookies=cfg.get("cookies", {}),
-                    headers=cfg.get("headers", {}),
-                ) as client:
-                    resp = await self._submit(client, endpoint, payload, cfg)
-
-                if resp.status_code == 404:
-                    raise DetectorError(
-                        f"{endpoint} returned 404 Not Found. The configured/preset "
-                        "'xml_endpoint' may not match this target's actual API — provide an "
-                        "explicit override in the target's scan configuration."
+            async with httpx.AsyncClient(
+                timeout=cfg["request_timeout"],
+                follow_redirects=True,
+                cookies=cfg.get("cookies", {}),
+                headers=cfg.get("headers", {}),
+            ) as client:
+                async with _CanaryServer(marker) as canary:
+                    callback_url = (
+                        f"http://{cfg['callback_host']}:{canary.port}/{secrets.token_hex(3)}"
                     )
+                    oob_payload = build_payload(callback_url)
+                    oob_resp = await self._submit(client, endpoint, oob_payload, cfg)
 
-                oob_hit = False
-                try:
-                    await asyncio.wait_for(canary.hit_event.wait(), timeout=cfg["oob_wait_seconds"])
-                    oob_hit = True
-                except TimeoutError:
-                    pass
+                    if oob_resp.status_code == 404:
+                        raise DetectorError(
+                            f"{endpoint} returned 404 Not Found. The configured/preset "
+                            "'xml_endpoint' may not match this target's actual API — provide "
+                            "an explicit override in the target's scan configuration."
+                        )
 
-            in_band_reflected = marker in resp.text
+                    oob_hit = False
+                    try:
+                        await asyncio.wait_for(
+                            canary.hit_event.wait(), timeout=cfg["oob_wait_seconds"]
+                        )
+                        oob_hit = True
+                    except TimeoutError:
+                        pass
+
+                local_file_path = cfg.get("local_file_path")
+                local_file_fingerprint = cfg.get("local_file_fingerprint")
+                local_file_reflected = False
+                if local_file_path and local_file_fingerprint:
+                    local_resp = await self._submit(
+                        client, endpoint, build_payload(f"file://{local_file_path}"), cfg
+                    )
+                    local_file_reflected = local_file_fingerprint in local_resp.text
+
+            in_band_reflected = (marker in oob_resp.text) or local_file_reflected
             decision = classify(oob_hit, in_band_reflected)
             evidence = {
                 "xml_endpoint": endpoint,
@@ -247,8 +266,10 @@ class XXEDetector(BaseDetector):
                 "callback_url": callback_url,
                 "oob_hit": oob_hit,
                 "oob_hit_count": canary.hit_count,
+                "local_file_path": local_file_path,
+                "local_file_reflected": local_file_reflected,
                 "in_band_reflected": in_band_reflected,
-                "response_status": resp.status_code,
+                "response_status": oob_resp.status_code,
             }
             return self._result(endpoint, decision, evidence)
         except DetectorError as exc:
