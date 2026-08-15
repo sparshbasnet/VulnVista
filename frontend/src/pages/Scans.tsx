@@ -22,6 +22,7 @@ interface Phase {
 }
 type ProfileId =
   | "command_injection"
+  | "sql_injection"
   | "weak_auth"
   | "sensitive_files"
   | "vulnerable_services"
@@ -49,6 +50,19 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "or query parameter to probe, then confirms OS command injection with output-marker " +
       "and time-based signals. Use Advanced below for a login, a session cookie, or an exact " +
       "parameter to target. http://dvwa is a bundled lab target requiring no setup.",
+  },
+  sql_injection: {
+    label: "SQL Injection",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for SQL injection",
+    scanningLabel: "Discovering injection points & probing…",
+    noFindingLabel: "No SQL injection detected on this target",
+    help:
+      "Works against any target: paste its URL and the scanner auto-discovers a form field " +
+      "or query parameter to probe, then confirms SQL injection with an error-signature, " +
+      "boolean-blind, and time-blind signal. Use Advanced below for a login, a session " +
+      "cookie, or an exact parameter to target. http://dvwa is a bundled lab target requiring no setup.",
   },
   weak_auth: {
     label: "Weak Authentication",
@@ -276,6 +290,7 @@ export default function Scans() {
       if (advParameter.trim()) scanConfig.parameter = advParameter.trim();
       if (advPath.trim()) {
         if (/^https?:\/\//i.test(advPath.trim())) scanConfig.injection_url = advPath.trim();
+        else if (profile === "sql_injection") scanConfig.injection_path = advPath.trim();
         else scanConfig.exec_path = advPath.trim();
       }
 
@@ -477,7 +492,7 @@ export default function Scans() {
                   <span className="text-[#a61b0d]">＋</span>
                 </summary>
                 <fieldset disabled={Boolean(selectedRegisteredTarget)} className="grid gap-3 border-t border-[#aaa6a1] p-3 disabled:opacity-50 sm:grid-cols-2">
-                  {profile === "command_injection" && (
+                  {(profile === "command_injection" || profile === "sql_injection") && (
                     <>
                       <input aria-label="Login username" type="text" value={advUsername} onChange={(event) => setAdvUsername(event.target.value)} placeholder="Login username" className="vv-input" />
                       <input aria-label="Login password" type="password" value={advPassword} onChange={(event) => setAdvPassword(event.target.value)} placeholder="Login password" className="vv-input" />
