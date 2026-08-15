@@ -31,6 +31,6 @@ RUN uv sync
 
 RUN mkdir -p /data/uploads
 
-EXPOSE 8000
+EXPOSE 9000
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9000", "--reload"]

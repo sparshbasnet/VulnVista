@@ -31,7 +31,7 @@ fetches the target page, parses its HTML forms (and any query-string
 parameters already on the pasted URL) with the same stdlib-only parser
 ``command_injection.py`` uses, and probes each candidate field/parameter in
 turn. A known lab host (DVWA) gets a preset pointing straight at its
-exercise instead of discovery, and any host can be pointed at an explicit
+exercise endpoints instead of discovery, and any host can be pointed at an explicit
 parameter/path/login via ``ScanContext.extra`` (populated from
 ``Target.scan_config``), which always wins over both the generic defaults
 and the lab preset.
@@ -39,14 +39,18 @@ and the lab preset.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
 
 import httpx
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
+
+logger = logging.getLogger(__name__)
 from app.scanners.command_injection import (
     Candidate,
     _candidates_from_form,
@@ -79,7 +83,10 @@ LAB_PRESETS: dict[str, dict[str, Any]] = {
         "login_path": "/login.php",
         "login_submit_field": "Login",
         "login_submit_value": "Login",
-        "injection_path": "/vulnerabilities/sqli/",
+        "injection_paths": [
+            "/vulnerabilities/sqli/",
+            "/vulnerabilities/sqli_blind/",
+        ],
         "parameter": "id",
         "submit_field": "Submit",
         "submit_value": "Submit",
@@ -138,22 +145,32 @@ class DetectorError(Exception):
     that is surfaced to the user (distinct from a raw transport error)."""
 
 
-def _explicit_candidate(base: str, cfg: dict[str, Any]) -> Candidate | None:
-    """Build the single targeted candidate when the caller (a lab preset or an
-    explicit ScanContext.extra override) names an exact parameter/path."""
+def _explicit_candidates(base: str, cfg: dict[str, Any]) -> list[Candidate]:
+    """Build targeted candidates when the caller (a lab preset or explicit
+    ScanContext.extra overrides) names exact parameter/path values."""
     if "parameter" not in cfg:
-        return None
-    if "injection_url" in cfg:
-        url = cfg["injection_url"]
+        return []
+
+    urls: list[str] = []
+    if "injection_urls" in cfg:
+        urls.extend(str(value) for value in cfg["injection_urls"])
+    elif "injection_paths" in cfg:
+        urls.extend(f"{base}{value}" for value in cfg["injection_paths"])
+    elif "injection_url" in cfg:
+        urls.append(str(cfg["injection_url"]))
     elif "injection_path" in cfg:
-        url = f"{base}{cfg['injection_path']}"
+        urls.append(f"{base}{cfg['injection_path']}")
     else:
-        return None
+        return []
+
     fixed = {}
     if cfg.get("submit_field"):
         fixed[cfg["submit_field"]] = cfg.get("submit_value", "")
     method = cfg.get("method", "GET")
-    return Candidate(method=method, url=url, param=cfg["parameter"], fixed_fields=fixed)
+    return [
+        Candidate(method=method, url=url, param=cfg["parameter"], fixed_fields=fixed)
+        for url in urls
+    ]
 
 
 def _find_sql_error(body: str, baseline_body: str) -> str | None:
@@ -178,6 +195,84 @@ def _boolean_diff(baseline_body: str, true_body: str, false_body: str) -> bool:
         or abs(len(true_body) - len(baseline_body)) <= BOOLEAN_LENGTH_TOLERANCE
     )
     return true_matches_baseline and false_body != true_body
+
+
+# --- Optional OWASP ZAP cross-check -----------------------------------------
+#
+# Opt-in (``ScanContext.extra['use_zap']``): runs ZAP's active scanner — an
+# independent engine with its own payload library — against the same
+# endpoint/parameter the manual probes already identified, purely as a second
+# opinion. Manual evidence always stands on its own; ZAP either raises
+# confidence when it agrees or is reported as a disagreement, never silently
+# overrides what the manual probes already proved. Requires the separate
+# `tools/docker-compose.yml` ZAP service to be running and reachable — if it
+# isn't, the cross-check is skipped and the manual result is returned as-is.
+
+ZAP_SQLI_CWE = "89"
+ZAP_DEFAULT_TIMEOUT_SECONDS = 90.0
+ZAP_POLL_INTERVAL_SECONDS = 2.0
+
+
+def _is_sqli_alert(alert: dict[str, Any]) -> bool:
+    if str(alert.get("cweid", "")) == ZAP_SQLI_CWE:
+        return True
+    return "sql injection" in str(alert.get("alert", "")).lower()
+
+
+@dataclass
+class ZapOutcome:
+    used: bool
+    reachable: bool
+    completed: bool
+    detected: bool
+    alerts: list[dict[str, Any]]
+    note: str
+
+    def to_evidence(self) -> dict[str, Any]:
+        return {
+            "used": self.used,
+            "reachable": self.reachable,
+            "scan_completed": self.completed,
+            "detected": self.detected,
+            "alert_count": len(self.alerts),
+            "alerts": [
+                {
+                    "name": a.get("alert"),
+                    "risk": a.get("risk"),
+                    "confidence": a.get("confidence"),
+                    "param": a.get("param"),
+                    "cweid": a.get("cweid"),
+                    "evidence": a.get("evidence"),
+                }
+                for a in self.alerts[:5]
+            ],
+            "note": self.note,
+        }
+
+
+def combine_with_zap(
+    manual_detected: bool,
+    manual_confidence: str,
+    zap_used: bool,
+    zap_reachable: bool,
+    zap_detected: bool,
+) -> tuple[bool, str, str]:
+    """Fold an optional ZAP cross-check into the manual result, returning
+    (detected, validation_status, confidence).
+
+    Kept pure (no I/O) so the merge policy can be unit-tested directly.
+    Manual evidence always stands: if ZAP wasn't used or isn't reachable,
+    the manual verdict passes through completely unchanged.
+    """
+    if not zap_used or not zap_reachable:
+        return manual_detected, ("CONFIRMED" if manual_detected else "NOT_DETECTED"), manual_confidence
+    if manual_detected and zap_detected:
+        return True, "CONFIRMED", "HIGH"
+    if manual_detected and not zap_detected:
+        return True, "CONFIRMED", manual_confidence
+    if not manual_detected and zap_detected:
+        return True, "CONFIRMED", "MEDIUM"
+    return False, "NOT_DETECTED", "LOW"
 
 
 @dataclass
@@ -242,6 +337,15 @@ class SQLInjectionDetector(BaseDetector):
     supported_targets = ["webapp"]
 
     async def check(self, context: ScanContext) -> DetectorResult:
+        """Compatibility wrapper: return the first detected result, else the
+        last probed result (matching historical single-result behavior)."""
+        results = await self.check_many(context)
+        for result in results:
+            if result.detected:
+                return result
+        return results[-1]
+
+    async def check_many(self, context: ScanContext) -> list[DetectorResult]:
         parsed = urlparse(context.base_url)
         host = parsed.hostname or ""
         base = f"{parsed.scheme}://{parsed.netloc}"
@@ -258,9 +362,9 @@ class SQLInjectionDetector(BaseDetector):
                 if cfg.get("login_path") and cfg.get("username") and cfg.get("password"):
                     await self._authenticate(client, base, host, cfg)
 
-                explicit = _explicit_candidate(base, cfg)
-                if explicit is not None:
-                    candidates = [explicit]
+                explicit = _explicit_candidates(base, cfg)
+                if explicit:
+                    candidates = explicit
                     source = "explicit configuration"
                 else:
                     candidates = await self._discover_candidates(
@@ -276,23 +380,141 @@ class SQLInjectionDetector(BaseDetector):
                             "field isn't reachable from there."
                         )
 
-                candidate = evidence = decision = None
-                for raw_candidate in candidates[: cfg["max_candidates"]]:
+                results: list[DetectorResult] = []
+                active_candidates = candidates[: cfg["max_candidates"]]
+                for idx, raw_candidate in enumerate(active_candidates, start=1):
                     candidate = await self._prime_candidate(client, raw_candidate, cfg)
                     decision, evidence = await self._probe(client, candidate, cfg)
-                    if decision.detected:
-                        break
+                    evidence["candidates_probed"] = len(active_candidates)
+                    evidence["candidate_source"] = source
+                    evidence["candidate_index"] = idx
+                    results.append(self._result(candidate, decision, evidence))
 
-                assert candidate is not None and decision is not None and evidence is not None
-                evidence["candidates_probed"] = min(len(candidates), cfg["max_candidates"])
-                evidence["candidate_source"] = source
-                return self._result(candidate, decision, evidence)
+                if not results:
+                    raise DetectorError("No probe candidates were available after discovery.")
+                return results
         except DetectorError as exc:
-            return self._error_result(context, str(exc))
+            return [self._error_result(context, str(exc))]
         except httpx.HTTPError as exc:
-            return self._error_result(
-                context, f"Could not reach the target ({type(exc).__name__}: {exc})."
+            return [
+                self._error_result(
+                    context, f"Could not reach the target ({type(exc).__name__}: {exc})."
+                )
+            ]
+
+    async def validate(self, context: ScanContext, result: DetectorResult) -> DetectorResult:
+        """Optional OWASP ZAP cross-check — see the module docstring for
+        `ScanContext.extra['use_zap']`. Never raises: any failure reaching or
+        running ZAP degrades to "cross-check unavailable", leaving the manual
+        result exactly as `check()` produced it."""
+        if not context.extra.get("use_zap") or result.validation_status == "ERROR":
+            return result
+
+        zap = await self._run_zap_cross_check(context, result)
+        detected, validation_status, confidence = combine_with_zap(
+            manual_detected=result.detected,
+            manual_confidence=result.confidence,
+            zap_used=zap.used,
+            zap_reachable=zap.reachable,
+            zap_detected=zap.detected,
+        )
+
+        if not zap.reachable:
+            note = f" OWASP ZAP cross-check requested but unavailable: {zap.note}."
+        elif result.detected and zap.detected:
+            note = " OWASP ZAP's active scanner independently confirmed SQL injection on this endpoint."
+        elif result.detected and not zap.detected:
+            note = " OWASP ZAP's active scanner did not corroborate this — manual evidence stands."
+        elif not result.detected and zap.detected:
+            note = (
+                " Manual probing found nothing, but OWASP ZAP's active scanner flagged SQL "
+                "injection here — recommend manual follow-up."
             )
+        else:
+            note = " OWASP ZAP's active scanner also found nothing."
+
+        return replace(
+            result,
+            detected=detected,
+            validation_status=validation_status,
+            confidence=confidence,
+            severity="CRITICAL" if detected else result.severity,
+            cvss_score=9.8 if detected else result.cvss_score,
+            evidence_summary=result.evidence_summary + note,
+            evidence={**result.evidence, "zap": zap.to_evidence()},
+        )
+
+    async def _run_zap_cross_check(self, context: ScanContext, result: DetectorResult) -> ZapOutcome:
+        try:
+            from app.services.zap_client import zap_client
+        except Exception as exc:  # missing dependency, bad config, etc.
+            logger.warning("ZAP cross-check unavailable: %s", exc)
+            return ZapOutcome(True, False, False, False, [], f"ZAP client unavailable ({exc})")
+
+        if not result.endpoint or not result.parameter:
+            return ZapOutcome(True, False, False, False, [], "no endpoint/parameter to hand to ZAP")
+
+        loop = asyncio.get_running_loop()
+        timeout_seconds = float(context.extra.get("zap_timeout_seconds", ZAP_DEFAULT_TIMEOUT_SECONDS))
+
+        try:
+            reachable = await loop.run_in_executor(None, zap_client.is_ready)
+        except Exception as exc:
+            return ZapOutcome(True, False, False, False, [], f"ZAP health check failed ({exc})")
+        if not reachable:
+            return ZapOutcome(
+                True, False, False, False, [], "ZAP daemon not reachable at the configured API URL"
+            )
+
+        method = str(result.evidence.get("method", "GET")).upper()
+        fixed_fields = result.evidence.get("fixed_fields") or {}
+        baseline_value = result.evidence.get("payloads", {}).get("baseline", "1")
+        params = {**fixed_fields, result.parameter: baseline_value}
+
+        try:
+            if method == "GET":
+                scan_id = await loop.run_in_executor(
+                    None,
+                    lambda: zap_client.zap.ascan.scan(url=f"{result.endpoint}?{urlencode(params)}"),
+                )
+            else:
+                scan_id = await loop.run_in_executor(
+                    None,
+                    lambda: zap_client.zap.ascan.scan(
+                        url=result.endpoint, method=method, postdata=urlencode(params)
+                    ),
+                )
+        except Exception as exc:
+            return ZapOutcome(True, True, False, False, [], f"could not start ZAP active scan ({exc})")
+
+        completed = False
+        started = loop.time()
+        try:
+            while True:
+                status = await loop.run_in_executor(None, lambda: zap_client.zap.ascan.status(scan_id))
+                if int(status) >= 100:
+                    completed = True
+                    break
+                if loop.time() - started >= timeout_seconds:
+                    break
+                await asyncio.sleep(ZAP_POLL_INTERVAL_SECONDS)
+        except Exception as exc:
+            return ZapOutcome(True, True, False, False, [], f"ZAP active scan polling failed ({exc})")
+
+        try:
+            alerts = await loop.run_in_executor(
+                None, lambda: zap_client.zap.core.alerts(baseurl=result.endpoint)
+            )
+        except Exception as exc:
+            return ZapOutcome(True, True, completed, False, [], f"could not retrieve ZAP alerts ({exc})")
+
+        sqli_alerts = [a for a in alerts if _is_sqli_alert(a)]
+        note = (
+            "scan completed"
+            if completed
+            else f"scan did not finish within {timeout_seconds:.0f}s — reporting alerts found so far"
+        )
+        return ZapOutcome(True, True, completed, bool(sqli_alerts), sqli_alerts, note)
 
     async def _authenticate(
         self, client: httpx.AsyncClient, base: str, host: str, cfg: dict[str, Any]
@@ -324,7 +546,7 @@ class SQLInjectionDetector(BaseDetector):
         if "setup.php" in final_url:
             raise DetectorError(
                 "DVWA's database is not initialized. In your browser open DVWA's setup page "
-                "(e.g. http://localhost:8081/setup.php) and click 'Create / Reset Database', "
+                "(e.g. http://localhost:8080/setup.php) and click 'Create / Reset Database', "
                 "then run the scan again."
             )
         if cfg["login_path"] in final_url or "login failed" in resp.text.lower():
@@ -415,6 +637,8 @@ class SQLInjectionDetector(BaseDetector):
 
         decision = classify(error_signature, boolean_diff, time_delta_ms, TIME_THRESHOLD_MS)
         evidence = {
+            "method": candidate.method,
+            "fixed_fields": candidate.fixed_fields,
             "error_signature": error_signature,
             "boolean_diff": boolean_diff,
             "time_dialect": time_dialect,

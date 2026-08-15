@@ -172,6 +172,7 @@ export default function Scans() {
   const [advPassword, setAdvPassword] = useState("");
   const [advLoginPath, setAdvLoginPath] = useState("");
   const [advKnownUsername, setAdvKnownUsername] = useState("");
+  const [advUseZap, setAdvUseZap] = useState(false);
   const [advCookie, setAdvCookie] = useState("");
   const [advParameter, setAdvParameter] = useState("");
   const [advPath, setAdvPath] = useState("");
@@ -205,6 +206,7 @@ export default function Scans() {
     setAdvPassword("");
     setAdvLoginPath("");
     setAdvKnownUsername("");
+    setAdvUseZap(false);
     setAdvCookie("");
     setAdvParameter("");
     setAdvPath("");
@@ -286,6 +288,7 @@ export default function Scans() {
       }
       if (advLoginPath.trim()) scanConfig.login_path = advLoginPath.trim();
       if (advKnownUsername.trim()) scanConfig.known_username = advKnownUsername.trim();
+      if (profile === "sql_injection" && advUseZap) scanConfig.use_zap = true;
       if (advCookie.trim()) scanConfig.cookies = parseCookieHeader(advCookie.trim());
       if (advParameter.trim()) scanConfig.parameter = advParameter.trim();
       if (advPath.trim()) {
@@ -504,6 +507,25 @@ export default function Scans() {
                       <input aria-label="Login path override" type="text" value={advLoginPath} onChange={(event) => setAdvLoginPath(event.target.value)} placeholder="Login path override (e.g. /login) — leave blank to auto-discover" className="vv-input sm:col-span-2" />
                       <input aria-label="Known valid username or email" type="text" value={advKnownUsername} onChange={(event) => setAdvKnownUsername(event.target.value)} placeholder="Known valid username/email (optional — enables enumeration check)" className="vv-input sm:col-span-2" />
                     </>
+                  )}
+                  {profile === "sql_injection" && (
+                    <label className="flex items-start gap-3 sm:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={advUseZap}
+                        onChange={(event) => setAdvUseZap(event.target.checked)}
+                        className="mt-0.5 h-4 w-4 shrink-0 accent-[#f0321d]"
+                      />
+                      <span className="text-[10px] leading-relaxed text-[#676360]">
+                        <strong className="block text-[9px] uppercase tracking-wide text-[#171616]">
+                          Cross-check with OWASP ZAP
+                        </strong>
+                        Runs ZAP's active scanner against the same endpoint as a second opinion.
+                        Confidence rises when both agree; a disagreement is reported, not hidden.
+                        Requires the separate ZAP lab service (tools/docker-compose.yml) to be running —
+                        skipped automatically if it isn't reachable.
+                      </span>
+                    </label>
                   )}
                   <input aria-label="Session cookie" type="text" value={advCookie} onChange={(event) => setAdvCookie(event.target.value)} placeholder="Session cookie (name=value; name2=value2)" className="vv-input sm:col-span-2" />
                   <input aria-label="Exact parameter name" type="text" value={advParameter} onChange={(event) => setAdvParameter(event.target.value)} placeholder="Exact parameter name (e.g. ip)" className="vv-input" />

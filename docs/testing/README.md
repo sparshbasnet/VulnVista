@@ -7,10 +7,10 @@ This folder documents the lab applications used for VulnVista testing, which bro
 | App                | Purpose                         | Browser URL                                                       |
 | ------------------ | ------------------------------- | ----------------------------------------------------------------- |
 | VulnVista frontend | Main dashboard UI               | http://localhost:5173                                             |
-| VulnVista backend  | API and scan engine             | http://localhost:8000/api/health                                  |
+| VulnVista backend  | API and scan engine             | http://localhost:9000/api/health                                  |
 | PostgreSQL         | Database backing the app        | Not opened in a browser; the default host port is 5432            |
 | pgAdmin            | Optional database admin UI      | http://localhost:5050                                             |
-| DVWA               | Deliberately vulnerable web app | http://localhost:8081                                             |
+| DVWA               | Deliberately vulnerable web app | http://localhost:8080                                            |
 | OWASP Juice Shop   | Deliberately vulnerable web app | http://localhost:3000                                             |
 | TLS test service   | Weak TLS test target            | https://localhost:8443                                            |
 | Metasploitable2    | Multi-service vulnerable target | Browser access depends on the service; see the port mapping below |
@@ -22,7 +22,7 @@ This folder documents the lab applications used for VulnVista testing, which bro
 | Service    | Host port | Notes                                             |
 | ---------- | --------- | ------------------------------------------------- |
 | Frontend   | 5173      | Opens the React dashboard in the browser          |
-| Backend    | 8000      | Use the health endpoint in a browser: /api/health |
+| Backend    | 9000      | Use the health endpoint in a browser: /api/health |
 | PostgreSQL | 5432      | Used by the backend; not a browser target         |
 | pgAdmin    | 5050      | Optional UI for checking database state           |
 
@@ -30,7 +30,7 @@ This folder documents the lab applications used for VulnVista testing, which bro
 
 | Service                              | Host port             | Notes                                                              |
 | ------------------------------------ | --------------------- | ------------------------------------------------------------------ |
-| DVWA                                 | 8081                  | Web app target for command injection and other browser-based tests |
+| DVWA                                 | 8080                  | Web app target for command injection and other browser-based tests |
 | Juice Shop                           | 3000                  | Web app target for weak auth and sensitive-file checks             |
 | TLS test service                     | 8443                  | Used for weak TLS testing                                          |
 | Metasploitable2 FTP                  | 10021                 | Service exposed for service discovery tests                        |
@@ -61,8 +61,8 @@ This folder documents the lab applications used for VulnVista testing, which bro
 1. Start the main app stack with `docker compose up --build` from the repository root.
 2. Start the lab targets with `docker compose --env-file .env -f lab/docker-compose.yml up -d`.
 3. Open the frontend at http://localhost:5173 and confirm the dashboard loads.
-4. Open the backend health endpoint at http://localhost:8000/api/health and confirm it returns a healthy response.
-5. Open DVWA at http://localhost:8081 and log in with admin / password if needed.
+4. Open the backend health endpoint at http://localhost:9000/api/health and confirm it returns a healthy response.
+5. Open DVWA at http://localhost:8080 and log in with admin / password if needed.
 6. Open Juice Shop at http://localhost:3000 and confirm the home page loads.
 7. Open the TLS test service at https://localhost:8443 and accept the self-signed certificate warning.
 8. For Metasploitable2, test a service port directly from the host, for example:

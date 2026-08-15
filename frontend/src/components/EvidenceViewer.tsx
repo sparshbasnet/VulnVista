@@ -117,6 +117,48 @@ function SqlInjectionProof({ content }: { content: DataObject }) {
           </div>
         ))}
       </div>
+      <ZapCrossCheck zap={isObject(content.zap) ? content.zap : null} />
+    </div>
+  );
+}
+
+function ZapCrossCheck({ zap }: { zap: DataObject | null }) {
+  if (!zap || zap.used !== true) return null;
+
+  if (zap.reachable !== true) {
+    return (
+      <div className="border border-[#aaa6a1] bg-[#efedea] p-3 text-[10px] leading-relaxed text-[#676360]">
+        <p className="vv-label">OWASP ZAP cross-check</p>
+        <p className="mt-1">Requested but unavailable — {compact(zap.note)}.</p>
+      </div>
+    );
+  }
+
+  const alerts = objects(zap.alerts);
+  const detected = zap.detected === true;
+
+  return (
+    <div className={`border p-3 ${detected ? "border-[#f0a39a] bg-[#fff0ed]" : "border-[#d0ccc7] bg-white"}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="vv-label">OWASP ZAP cross-check</p>
+        <span className={`text-[9px] font-black uppercase tracking-wide ${detected ? "text-[#a61b0d]" : "text-[#676360]"}`}>
+          {detected ? "Alert raised" : "No alert"}
+        </span>
+      </div>
+      <p className="mt-1 text-[10px] text-[#676360]">
+        {compact(zap.note)}
+        {zap.scan_completed === false ? " (scan did not finish within its time budget)" : ""}
+      </p>
+      {alerts.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {alerts.map((alert, index) => (
+            <div key={index} className="border border-[#d0ccc7] bg-white p-2 font-mono text-[9px]">
+              <span className="font-bold">{compact(alert.name)}</span> · risk {compact(alert.risk)} ·
+              confidence {compact(alert.confidence)} · param {compact(alert.param)}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

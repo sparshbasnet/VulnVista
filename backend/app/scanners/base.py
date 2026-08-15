@@ -49,8 +49,18 @@ class BaseDetector(ABC):
     async def check(self, context: ScanContext) -> DetectorResult:
         """Execute the detector's safe test(s) against the target."""
 
-    async def validate(self, result: DetectorResult) -> DetectorResult:
-        """Optional secondary validation pass; defaults to a no-op."""
+    async def check_many(self, context: ScanContext) -> list[DetectorResult]:
+        """Execute the detector and return one or more result records.
+
+        Most detectors emit exactly one result and rely on this default
+        wrapper. Detectors that can produce multiple independent findings
+        from one run (e.g. multiple explicit endpoints) should override this.
+        """
+        return [await self.check(context)]
+
+    async def validate(self, context: ScanContext, result: DetectorResult) -> DetectorResult:
+        """Optional secondary validation pass (e.g. cross-checking against an
+        external scanner); defaults to a no-op."""
         return result
 
     def build_finding(self, scan_id: str, target_id: str, result: DetectorResult) -> dict[str, Any]:
