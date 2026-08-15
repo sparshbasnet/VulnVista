@@ -8,10 +8,12 @@ here.
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
 from app.scanners.command_injection import CommandInjectionDetector
+from app.scanners.csrf import CSRFDetector
 from app.scanners.sensitive_files import SensitiveFilesDetector
 from app.scanners.vulnerable_services import VulnerableServicesDetector
 from app.scanners.weak_auth import WeakAuthDetector
 from app.scanners.weak_tls import WeakTLSDetector
+from app.scanners.xxe import XXEDetector
 
 # detector_id -> singleton instance
 DETECTOR_REGISTRY: dict[str, BaseDetector] = {
@@ -22,6 +24,8 @@ DETECTOR_REGISTRY: dict[str, BaseDetector] = {
         SensitiveFilesDetector(),
         VulnerableServicesDetector(),
         WeakTLSDetector(),
+        CSRFDetector(),
+        XXEDetector(),
     )
 }
 
@@ -33,6 +37,8 @@ SCAN_PROFILES: dict[str, list[str]] = {
     "sensitive_files": ["sensitive_files"],
     "vulnerable_services": ["vulnerable_services"],
     "weak_tls": ["weak_tls"],
+    "csrf": ["csrf"],
+    "xxe": ["xxe"],
 }
 
 
