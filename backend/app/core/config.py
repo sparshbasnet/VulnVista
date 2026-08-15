@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
     secret_key: str = "dev-secret-change-me"
+    access_token_expire_minutes: int = 30
+    initial_admin_username: str | None = None
+    initial_admin_email: str | None = None
+    initial_admin_password: str | None = None
 
     database_url: str = "postgresql+asyncpg://vulnvista:vulnvista@postgres:5432/vulnvista"
 

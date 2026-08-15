@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "../services/api";
 import type { Finding, Scan } from "../types";
+import { useAuth } from "../auth/useAuth";
 
 const TERMINAL: Scan["status"][] = ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"];
 const POLL_INTERVAL_MS = 1500;
@@ -146,6 +147,7 @@ function parseCookieHeader(raw: string): Record<string, string> {
 }
 
 export default function Scans() {
+  const { canOperate } = useAuth();
   const [scans, setScans] = useState<Scan[]>([]);
   const [profile, setProfile] = useState<ProfileId>("command_injection");
   const [url, setUrl] = useState(PROFILES.command_injection.defaultUrl);
@@ -297,7 +299,7 @@ export default function Scans() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Scans</h1>
 
-      <form
+      {canOperate ? <form
         onSubmit={startScan}
         className="space-y-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4"
       >
@@ -432,7 +434,11 @@ export default function Scans() {
             {error && <p className="pt-1 text-red-400">⚠ {error}</p>}
           </div>
         )}
-      </form>
+      </form> : (
+        <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-400">
+          Your viewer role has read-only access. Ask an administrator for analyst access to run scans.
+        </div>
+      )}
 
       {findings && findings.length > 0 && (
         <div className="space-y-3">

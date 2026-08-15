@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useHealth } from "../hooks/useHealth";
+import { useAuth } from "../auth/useAuth";
 
 const navItems = [
   { to: "/", label: "Dashboard", end: true },
@@ -10,6 +11,7 @@ const navItems = [
 
 export default function Layout() {
   const health = useHealth();
+  const { user, logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -29,9 +31,19 @@ export default function Layout() {
                 {item.label}
               </NavLink>
             ))}
+            {user?.role === "ADMIN" && (
+              <NavLink
+                to="/users"
+                className={({ isActive }) =>
+                  isActive ? "text-white" : "text-slate-400 hover:text-slate-200"
+                }
+              >
+                Users
+              </NavLink>
+            )}
           </nav>
-          <span className="flex items-center gap-2 text-xs text-slate-400">
-            <span
+          <div className="flex items-center gap-4 text-xs text-slate-400">
+            <span className="flex items-center gap-2"><span
               className={`h-2 w-2 rounded-full ${
                 health === "online"
                   ? "bg-emerald-500"
@@ -39,9 +51,10 @@ export default function Layout() {
                     ? "bg-red-500"
                     : "bg-amber-500"
               }`}
-            />
-            API {health}
-          </span>
+            /> API {health}</span>
+            <span>{user?.username} · {user?.role}</span>
+            <button type="button" onClick={() => void logout()} className="text-slate-300 hover:text-white">Sign out</button>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-8">

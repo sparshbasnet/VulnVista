@@ -9,7 +9,6 @@ from app.models.scan import ScanStatus
 class ScanCreate(BaseModel):
     target_id: uuid.UUID
     scan_profile: str = "default"
-    initiated_by: str | None = None
 
 
 class ScanRead(BaseModel):

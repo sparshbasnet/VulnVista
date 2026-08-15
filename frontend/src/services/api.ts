@@ -1,20 +1,47 @@
-import type { Finding, Scan, Target, TargetCreatePayload } from "../types";
+import type {
+  Finding,
+  Scan,
+  Target,
+  TargetCreatePayload,
+  User,
+  UserCreatePayload,
+} from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = sessionStorage.getItem("vulnvista_access_token");
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
   });
-  if (!response.ok) {
-    throw new Error(`${init?.method ?? "GET"} ${path} failed: ${response.status}`);
+  if (response.status === 401 && path !== "/auth/login") {
+    sessionStorage.removeItem("vulnvista_access_token");
+    window.dispatchEvent(new Event("vulnvista:unauthorized"));
   }
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `${init?.method ?? "GET"} ${path} failed: ${response.status}`);
+  }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
 export const api = {
   health: () => request<{ status: string; environment: string }>("/health"),
+  login: (username: string, password: string) =>
+    request<{ access_token: string; token_type: string }>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+  me: () => request<User>("/auth/me"),
+  logout: () => request<void>("/auth/logout", { method: "POST" }),
+  createUser: (payload: UserCreatePayload) =>
+    request<User>("/auth/users", { method: "POST", body: JSON.stringify(payload) }),
   listTargets: () => request<Target[]>("/targets"),
   createTarget: (payload: TargetCreatePayload) =>
     request<Target>("/targets", { method: "POST", body: JSON.stringify(payload) }),

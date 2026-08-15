@@ -174,6 +174,10 @@ architecture and roadmap.
 
 ### First run
 
+Before the first start, set a strong `SECRET_KEY` and the three `INITIAL_ADMIN_*`
+values in `.env`. The backend creates that admin account once; subsequent starts do
+not overwrite it.
+
 ```bash
 ./scripts/setup.sh        # creates ./storage, copies .env.example -> .env, creates the shared network
 docker compose up --build # starts postgres + backend + frontend
@@ -181,6 +185,11 @@ docker compose up --build # starts postgres + backend + frontend
 
 - Backend API: <http://localhost:8000/api/health>
 - Frontend dashboard: <http://localhost:5173>
+
+Sign in with `INITIAL_ADMIN_USERNAME` (or `INITIAL_ADMIN_EMAIL`) and
+`INITIAL_ADMIN_PASSWORD`. Admins can create platform users through
+`POST /api/auth/users`; analysts can create targets and scans, while viewers have
+read-only access.
 
 ### Persistent data
 

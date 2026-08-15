@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth_deps import require_operator
 from app.api.deps import get_db
 from app.core.config import get_settings
 from app.models.target import Target
@@ -30,7 +31,11 @@ def _is_blocked_host(base_url: str | None) -> bool:
 
 
 @router.post("", response_model=TargetRead, status_code=201)
-async def create_target(payload: TargetCreate, db: AsyncSession = Depends(get_db)) -> Target:
+async def create_target(
+    payload: TargetCreate,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_operator),
+) -> Target:
     if _is_blocked_host(payload.base_url):
         raise HTTPException(status_code=422, detail="This host cannot be scanned")
 

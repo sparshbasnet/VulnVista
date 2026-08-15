@@ -4,10 +4,12 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth_deps import require_operator
 from app.api.deps import get_db
 from app.models.finding import Finding
 from app.models.scan import Scan
 from app.models.target import Target
+from app.models.user import User
 from app.schemas.finding import FindingRead
 from app.schemas.scan import ScanCreate, ScanRead
 from app.services.scan_runner import run_scan
@@ -20,6 +22,7 @@ async def create_scan(
     payload: ScanCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_operator),
 ) -> Scan:
     target = await db.get(Target, payload.target_id)
     if target is None:
@@ -27,7 +30,7 @@ async def create_scan(
     if not target.is_allowed:
         raise HTTPException(status_code=403, detail="Target is not on the approved allowlist")
 
-    scan = Scan(**payload.model_dump())
+    scan = Scan(**payload.model_dump(exclude={"initiated_by"}), initiated_by=current_user.username)
     db.add(scan)
     await db.commit()
     await db.refresh(scan)

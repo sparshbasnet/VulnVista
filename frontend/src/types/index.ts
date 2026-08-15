@@ -4,6 +4,25 @@ export type FindingStatus = "OPEN" | "IN_PROGRESS" | "REMEDIATED" | "ACCEPTED_RI
 
 export type ValidationStatus = "NOT_DETECTED" | "SUSPECTED" | "CONFIRMED" | "INCONCLUSIVE" | "ERROR";
 
+export type UserRole = "ADMIN" | "ANALYST" | "VIEWER";
+
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  role: UserRole;
+  is_active: boolean;
+  last_login_at: string | null;
+  created_at: string;
+}
+
+export interface UserCreatePayload {
+  username: string;
+  email: string;
+  password: string;
+  role: UserRole;
+}
+
 export interface Target {
   id: string;
   name: string;
