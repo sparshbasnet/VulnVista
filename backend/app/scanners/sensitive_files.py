@@ -1,25 +1,24 @@
 """Sensitive-file-exposure detector.
 
 Evidence-based, same as ``command_injection.py`` / ``weak_auth.py``: it never
-assumes a file is exposed just because a GET returns HTTP 200 — OWASP Juice
-Shop is an Angular single-page app whose Express server can fall back to
-serving ``index.html`` for unmatched routes, which would otherwise look like
-a false positive for every candidate path. Instead, each candidate is
-compared against a baseline probe of a random, guaranteed-nonexistent path.
-Only a response that actually differs from that "not found" fingerprint
-(different status code, or same 200 status but different body) counts as a
-real exposure.
+assumes a file is exposed just because a GET returns HTTP 200 — a
+single-page app's server can fall back to serving ``index.html`` for
+unmatched routes, which would otherwise look like a false positive for
+every candidate path. Instead, each candidate is compared against a
+baseline probe of a random, guaranteed-nonexistent path. Only a response
+that actually differs from that "not found" fingerprint (different status
+code, or same 200 status but different body) counts as a real exposure.
 
-Candidates cover the categories called out in the project plan: seeded
-backup files, a controlled log file, configuration-file exposure, source-map
-exposure, repository metadata, and an internal/confidential document — all
-drawn from Juice Shop's own intentionally-seeded ``/ftp`` directory and
-generic well-known paths (``.git``, ``.env``, Angular ``*.js.map`` build
-artifacts). Only status/content-type/content-length are recorded as
-evidence — response bodies are never captured or stored, so no unrelated
-data (personal or otherwise) is collected. Juice Shop-specific paths live in
-overridable defaults, not in the detection logic, so the same detector can
-be pointed at another target via ``ScanContext.extra``.
+The candidate list is generic — well-known backup, environment/config,
+credential-store, source-map, log, and repository-metadata paths that
+apply to any web stack (Git, PHP, Node, .NET, Docker, ...). A known lab
+host (Juice Shop) additionally gets its own intentionally-seeded ``/ftp``
+files layered on top via ``LAB_PRESETS``, so its quick-start keeps
+surfacing those without special-casing the detection logic itself. Only
+status/content-type/content-length are recorded as evidence — response
+bodies are never captured or stored, so no unrelated data (personal or
+otherwise) is collected. The full candidate list can be overridden outright
+via ``ScanContext.extra['candidate_files']``.
 """
 
 from __future__ import annotations
@@ -33,28 +32,69 @@ import httpx
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
 
-# Each candidate is a known-seeded or well-known path plus the category of
-# sensitive data it would expose. Juice Shop's own /ftp directory seeds most
-# of these deliberately; .git/.env/*.js.map are generic checks that simply
-# won't be exposed on a correctly-built target (evidence-based: absence is
-# not reported as a finding).
-CANDIDATE_FILES: list[dict[str, str]] = [
-    {"path": "/ftp/acquisitions.md", "category": "confidential_document"},
-    {"path": "/ftp/eastere.gg", "category": "hidden_internal_file"},
-    {"path": "/ftp/package.json.bak", "category": "backup_file"},
-    {"path": "/ftp/coupons_2013.md.bak", "category": "backup_file"},
-    {"path": "/ftp/suspicious_errors.yml", "category": "log_file"},
-    {"path": "/ftp/incident-support.kdbx", "category": "credential_store"},
+# Well-known paths that apply to any target, regardless of stack, plus the
+# category of sensitive data each would expose if actually reachable.
+# Evidence-based: a candidate that doesn't exist is simply absent from the
+# finding, never reported.
+GENERIC_CANDIDATE_FILES: list[dict[str, str]] = [
+    # version control
     {"path": "/.git/HEAD", "category": "repository_metadata"},
     {"path": "/.git/config", "category": "repository_metadata"},
+    {"path": "/.git/logs/HEAD", "category": "repository_metadata"},
+    {"path": "/.svn/entries", "category": "repository_metadata"},
+    {"path": "/.hg/hgrc", "category": "repository_metadata"},
+    # environment / configuration
     {"path": "/.env", "category": "configuration_file"},
+    {"path": "/.env.local", "category": "configuration_file"},
+    {"path": "/.env.production", "category": "configuration_file"},
+    {"path": "/config.php.bak", "category": "configuration_file"},
+    {"path": "/wp-config.php.bak", "category": "configuration_file"},
+    {"path": "/web.config.bak", "category": "configuration_file"},
+    {"path": "/appsettings.json", "category": "configuration_file"},
+    {"path": "/docker-compose.yml", "category": "configuration_file"},
+    {"path": "/Dockerfile", "category": "configuration_file"},
+    # backups
+    {"path": "/backup.zip", "category": "backup_file"},
+    {"path": "/backup.sql", "category": "backup_file"},
+    {"path": "/database.sql", "category": "backup_file"},
+    {"path": "/dump.sql", "category": "backup_file"},
+    {"path": "/site.tar.gz", "category": "backup_file"},
+    # credential stores
+    {"path": "/.aws/credentials", "category": "credential_store"},
+    {"path": "/id_rsa", "category": "credential_store"},
+    {"path": "/.ssh/id_rsa", "category": "credential_store"},
+    {"path": "/.htpasswd", "category": "credential_store"},
+    # source maps
     {"path": "/main.js.map", "category": "source_map"},
     {"path": "/vendor.js.map", "category": "source_map"},
     {"path": "/runtime.js.map", "category": "source_map"},
+    {"path": "/app.js.map", "category": "source_map"},
+    {"path": "/bundle.js.map", "category": "source_map"},
+    # logs
+    {"path": "/error.log", "category": "log_file"},
+    {"path": "/debug.log", "category": "log_file"},
+    {"path": "/npm-debug.log", "category": "log_file"},
+    # hidden internal / IDE files
+    {"path": "/.DS_Store", "category": "hidden_internal_file"},
+    {"path": "/.idea/workspace.xml", "category": "hidden_internal_file"},
+    {"path": "/.vscode/settings.json", "category": "hidden_internal_file"},
 ]
 
+# Extra candidates layered on top of GENERIC_CANDIDATE_FILES for known lab
+# hosts, keyed by hostname — Juice Shop deliberately seeds these under /ftp.
+LAB_PRESETS: dict[str, list[dict[str, str]]] = {
+    "juice-shop": [
+        {"path": "/ftp/acquisitions.md", "category": "confidential_document"},
+        {"path": "/ftp/eastere.gg", "category": "hidden_internal_file"},
+        {"path": "/ftp/package.json.bak", "category": "backup_file"},
+        {"path": "/ftp/coupons_2013.md.bak", "category": "backup_file"},
+        {"path": "/ftp/suspicious_errors.yml", "category": "log_file"},
+        {"path": "/ftp/incident-support.kdbx", "category": "credential_store"},
+    ],
+}
+LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
+
 DEFAULTS: dict[str, Any] = {
-    "candidate_files": CANDIDATE_FILES,
     "request_timeout": 15.0,
 }
 
@@ -145,12 +185,17 @@ class SensitiveFilesDetector(BaseDetector):
     detector_id = "sensitive_files"
     name = "Sensitive File Exposure"
     vulnerability_type = "sensitive_files"
-    supported_targets = ["juice-shop", "webapp"]
+    supported_targets = ["webapp"]
 
     async def check(self, context: ScanContext) -> DetectorResult:
         cfg = {**DEFAULTS, **context.extra}
         parsed = urlparse(context.base_url)
+        host = parsed.hostname or ""
         base = f"{parsed.scheme}://{parsed.netloc}"
+        candidate_files = cfg.get("candidate_files") or [
+            *GENERIC_CANDIDATE_FILES,
+            *LAB_PRESETS.get(host, []),
+        ]
 
         try:
             async with httpx.AsyncClient(timeout=cfg["request_timeout"]) as client:
@@ -158,7 +203,7 @@ class SensitiveFilesDetector(BaseDetector):
 
                 exposed: list[dict[str, Any]] = []
                 checked: list[str] = []
-                for candidate in cfg["candidate_files"]:
+                for candidate in candidate_files:
                     resp = await client.get(f"{base}{candidate['path']}")
                     checked.append(candidate["path"])
                     content_length = len(resp.content)

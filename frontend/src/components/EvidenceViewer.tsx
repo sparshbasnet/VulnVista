@@ -172,11 +172,16 @@ function WeakAuthProof({ content }: { content: DataObject }) {
     counts[key] = (counts[key] ?? 0) + 1;
     return counts;
   }, {});
-  const enumeration = content.known_email_has_question === true && content.unknown_email_has_question === false;
+  const enumerationChecked = content.enumeration_checked === true;
+  const enumerationLeaked = content.enumeration_leaked === true;
   return (
     <div className="space-y-4">
       <div className="grid gap-2 sm:grid-cols-3">
-        <Metric label="Account enumeration" value={enumeration ? "Confirmed" : "Not confirmed"} tone={enumeration ? "signal" : "quiet"} />
+        <Metric
+          label="Account enumeration"
+          value={!enumerationChecked ? "Not checked" : enumerationLeaked ? "Confirmed" : "Not confirmed"}
+          tone={enumerationLeaked ? "signal" : "quiet"}
+        />
         <Metric label="Login attempts" value={attempts.length} />
         <Metric label="Unique responses" value={Object.keys(distribution).length} />
       </div>
@@ -189,7 +194,12 @@ function WeakAuthProof({ content }: { content: DataObject }) {
         </div>
       </div>
       <dl className="grid gap-2 text-[10px] sm:grid-cols-2">
-        <div><dt className="vv-label">Enumeration endpoint</dt><dd className="mt-1 break-all font-mono">{compact(content.enumeration_endpoint)}</dd></div>
+        <div>
+          <dt className="vv-label">Enumeration endpoint</dt>
+          <dd className="mt-1 break-all font-mono">
+            {enumerationChecked ? compact(content.enumeration_endpoint) : "Skipped — no known username supplied"}
+          </dd>
+        </div>
         <div><dt className="vv-label">Login endpoint</dt><dd className="mt-1 break-all font-mono">{compact(content.login_endpoint)}</dd></div>
       </dl>
     </div>

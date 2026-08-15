@@ -51,29 +51,32 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "parameter to target. http://dvwa is a bundled lab target requiring no setup.",
   },
   weak_auth: {
-    label: "Weak Authentication (Juice Shop)",
-    targetType: "juice-shop",
+    label: "Weak Authentication",
+    targetType: "webapp",
     defaultUrl: "http://juice-shop:3000",
     buttonLabel: "Scan for weak authentication",
     scanningLabel: "Probing authentication endpoints…",
     noFindingLabel: "No weak authentication controls detected on this target",
     help:
-      "Enter the target as the backend reaches it on the lab network — e.g. " +
-      "http://juice-shop:3000. The scanner checks the seeded admin account for username " +
-      "enumeration via the password-reset flow and for missing login rate limiting/lockout.",
+      "Works against any target with a login form: paste its URL and the scanner " +
+      "auto-discovers the login form, then checks for missing login rate limiting/lockout. " +
+      "Provide a known valid username/email in Advanced to also check for account-" +
+      "enumeration oracles (skipped otherwise, since a valid account can't be discovered " +
+      "safely). http://juice-shop:3000 is a bundled lab target requiring no setup.",
   },
   sensitive_files: {
-    label: "Sensitive File Exposure (Juice Shop)",
-    targetType: "juice-shop",
+    label: "Sensitive File Exposure",
+    targetType: "webapp",
     defaultUrl: "http://juice-shop:3000",
     buttonLabel: "Scan for exposed sensitive files",
     scanningLabel: "Checking for exposed backups, config, and metadata…",
     noFindingLabel: "No sensitive files exposed on this target",
     help:
-      "Enter the target as the backend reaches it on the lab network — e.g. " +
-      "http://juice-shop:3000. The scanner checks for directly retrievable backup files, " +
-      "configuration files, repository metadata, source maps, and internal documents, " +
-      "confirming each against a baseline so the app's fallback page isn't mistaken for a hit.",
+      "Works against any target: paste its URL and the scanner checks a generic set of " +
+      "well-known backup, environment/config, credential-store, source-map, log, and " +
+      "repository-metadata paths (.git, .env, *.js.map, and more), confirming each against " +
+      "a baseline so the app's fallback page isn't mistaken for a hit. " +
+      "http://juice-shop:3000 is a bundled lab target requiring no setup.",
   },
   vulnerable_services: {
     label: "Vulnerable Services (Metasploitable2)",
@@ -154,6 +157,7 @@ export default function Scans() {
   const [advUsername, setAdvUsername] = useState("");
   const [advPassword, setAdvPassword] = useState("");
   const [advLoginPath, setAdvLoginPath] = useState("");
+  const [advKnownUsername, setAdvKnownUsername] = useState("");
   const [advCookie, setAdvCookie] = useState("");
   const [advParameter, setAdvParameter] = useState("");
   const [advPath, setAdvPath] = useState("");
@@ -186,6 +190,7 @@ export default function Scans() {
     setAdvUsername("");
     setAdvPassword("");
     setAdvLoginPath("");
+    setAdvKnownUsername("");
     setAdvCookie("");
     setAdvParameter("");
     setAdvPath("");
@@ -264,8 +269,9 @@ export default function Scans() {
       if (advUsername.trim() && advPassword.trim()) {
         scanConfig.username = advUsername.trim();
         scanConfig.password = advPassword.trim();
-        if (advLoginPath.trim()) scanConfig.login_path = advLoginPath.trim();
       }
+      if (advLoginPath.trim()) scanConfig.login_path = advLoginPath.trim();
+      if (advKnownUsername.trim()) scanConfig.known_username = advKnownUsername.trim();
       if (advCookie.trim()) scanConfig.cookies = parseCookieHeader(advCookie.trim());
       if (advParameter.trim()) scanConfig.parameter = advParameter.trim();
       if (advPath.trim()) {
@@ -476,6 +482,12 @@ export default function Scans() {
                       <input aria-label="Login username" type="text" value={advUsername} onChange={(event) => setAdvUsername(event.target.value)} placeholder="Login username" className="vv-input" />
                       <input aria-label="Login password" type="password" value={advPassword} onChange={(event) => setAdvPassword(event.target.value)} placeholder="Login password" className="vv-input" />
                       <input aria-label="Login path" type="text" value={advLoginPath} onChange={(event) => setAdvLoginPath(event.target.value)} placeholder="Login path (e.g. /login.php)" className="vv-input sm:col-span-2" />
+                    </>
+                  )}
+                  {profile === "weak_auth" && (
+                    <>
+                      <input aria-label="Login path override" type="text" value={advLoginPath} onChange={(event) => setAdvLoginPath(event.target.value)} placeholder="Login path override (e.g. /login) — leave blank to auto-discover" className="vv-input sm:col-span-2" />
+                      <input aria-label="Known valid username or email" type="text" value={advKnownUsername} onChange={(event) => setAdvKnownUsername(event.target.value)} placeholder="Known valid username/email (optional — enables enumeration check)" className="vv-input sm:col-span-2" />
                     </>
                   )}
                   <input aria-label="Session cookie" type="text" value={advCookie} onChange={(event) => setAdvCookie(event.target.value)} placeholder="Session cookie (name=value; name2=value2)" className="vv-input sm:col-span-2" />
