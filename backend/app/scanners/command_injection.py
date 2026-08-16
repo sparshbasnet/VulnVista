@@ -348,7 +348,7 @@ class CommandInjectionDetector(BaseDetector):
         if "setup.php" in final_url:
             raise DetectorError(
                 "DVWA's database is not initialized. In your browser open DVWA's setup page "
-                "(e.g. http://localhost:8081/setup.php) and click 'Create / Reset Database', "
+                "(e.g. http://localhost:8080/setup.php) and click 'Create / Reset Database', "
                 "then run the scan again."
             )
         if cfg["login_path"] in final_url or "login failed" in resp.text.lower():

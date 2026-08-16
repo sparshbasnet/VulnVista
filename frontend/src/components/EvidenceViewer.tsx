@@ -33,13 +33,32 @@ function Metric({ label, value, tone = "default" }: { label: string; value: stri
   );
 }
 
+function TimingBars({ timings }: { timings: { label: string; value: number; signal: boolean }[] }) {
+  const max = Math.max(1, ...timings.map(({ value }) => value));
+  return (
+    <div className="border border-[#d0ccc7] bg-white p-3">
+      <p className="vv-label">Probe timing comparison</p>
+      <div className="mt-3 space-y-2.5">
+        {timings.map((timing) => (
+          <div key={timing.label} className="grid grid-cols-[96px_minmax(0,1fr)_58px] items-center gap-2">
+            <span className="text-[10px] font-bold text-[#514e4b]">{timing.label}</span>
+            <div className="h-2.5 bg-[#e6e3e0]">
+              <div className={`h-full ${timing.signal ? "bg-[#f0321d]" : "bg-[#2b2928]"}`} style={{ width: `${(timing.value / max) * 100}%` }} />
+            </div>
+            <span className="text-right font-mono text-[10px]">{Math.round(timing.value)} ms</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CommandInjectionProof({ content }: { content: DataObject }) {
   const timings = [
     { label: "Baseline", value: Number(content.baseline_ms ?? 0), signal: false },
     { label: "Marker probe", value: Number(content.marker_probe_ms ?? 0), signal: false },
     { label: "Blind delay", value: Number(content.blind_probe_ms ?? 0), signal: true },
   ];
-  const max = Math.max(1, ...timings.map(({ value }) => value));
 
   return (
     <div className="space-y-4">
@@ -48,20 +67,7 @@ function CommandInjectionProof({ content }: { content: DataObject }) {
         <Metric label="Time delta" value={`${Math.round(Number(content.time_delta_ms ?? 0))} ms`} tone="signal" />
         <Metric label="Threshold" value={`${Math.round(Number(content.time_threshold_ms ?? 0))} ms`} />
       </div>
-      <div className="border border-[#d0ccc7] bg-white p-3">
-        <p className="vv-label">Probe timing comparison</p>
-        <div className="mt-3 space-y-2.5">
-          {timings.map((timing) => (
-            <div key={timing.label} className="grid grid-cols-[82px_minmax(0,1fr)_58px] items-center gap-2">
-              <span className="text-[10px] font-bold text-[#514e4b]">{timing.label}</span>
-              <div className="h-2.5 bg-[#e6e3e0]">
-                <div className={`h-full ${timing.signal ? "bg-[#f0321d]" : "bg-[#2b2928]"}`} style={{ width: `${(timing.value / max) * 100}%` }} />
-              </div>
-              <span className="text-right font-mono text-[10px]">{Math.round(timing.value)} ms</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <TimingBars timings={timings} />
       {content.output_snippet ? (
         <div>
           <p className="vv-label">Captured response output</p>
@@ -71,6 +77,88 @@ function CommandInjectionProof({ content }: { content: DataObject }) {
         </div>
       ) : null}
       {content.auth ? <p className="text-[10px] text-[#676360]"><span className="font-black uppercase">Probe context:</span> {String(content.auth)}</p> : null}
+    </div>
+  );
+}
+
+function SqlInjectionProof({ content }: { content: DataObject }) {
+  const timings = [
+    { label: "Baseline", value: Number(content.baseline_ms ?? 0), signal: false },
+    { label: "Error probe", value: Number(content.error_probe_ms ?? 0), signal: Boolean(content.error_signature) },
+    { label: "Boolean true", value: Number(content.boolean_true_ms ?? 0), signal: false },
+    { label: "Boolean false", value: Number(content.boolean_false_ms ?? 0), signal: false },
+    { label: "Time-blind delay", value: Number(content.time_delta_ms ?? 0) + Number(content.baseline_ms ?? 0), signal: true },
+  ];
+  const payloads = isObject(content.payloads) ? content.payloads : {};
+  const statusCodes = isObject(content.status_codes) ? content.status_codes : {};
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Metric
+          label="Error signature"
+          value={content.error_signature ? String(content.error_signature) : "Not found"}
+          tone={content.error_signature ? "signal" : "quiet"}
+        />
+        <Metric label="Boolean-blind diff" value={content.boolean_diff ? "Confirmed" : "Not confirmed"} tone={content.boolean_diff ? "signal" : "quiet"} />
+        <Metric
+          label="Time-blind delay"
+          value={content.time_dialect ? `${Math.round(Number(content.time_delta_ms ?? 0))} ms (${compact(content.time_dialect)})` : "Not observed"}
+          tone={content.time_dialect ? "signal" : "quiet"}
+        />
+      </div>
+      <TimingBars timings={timings} />
+      <div className="grid gap-2 text-[10px] sm:grid-cols-2">
+        {(["baseline", "error", "boolean_true", "boolean_false"] as const).map((key) => (
+          <div key={key} className="border border-[#d0ccc7] bg-white p-3">
+            <p className="vv-label">{titleCase(key)}</p>
+            <p className="mt-1 font-mono">status {compact(statusCodes[key])}</p>
+            <p className="mt-1 break-all font-mono text-[#676360]">{compact(payloads[key])}</p>
+          </div>
+        ))}
+      </div>
+      <ZapCrossCheck zap={isObject(content.zap) ? content.zap : null} />
+    </div>
+  );
+}
+
+function ZapCrossCheck({ zap }: { zap: DataObject | null }) {
+  if (!zap || zap.used !== true) return null;
+
+  if (zap.reachable !== true) {
+    return (
+      <div className="border border-[#aaa6a1] bg-[#efedea] p-3 text-[10px] leading-relaxed text-[#676360]">
+        <p className="vv-label">OWASP ZAP cross-check</p>
+        <p className="mt-1">Requested but unavailable — {compact(zap.note)}.</p>
+      </div>
+    );
+  }
+
+  const alerts = objects(zap.alerts);
+  const detected = zap.detected === true;
+
+  return (
+    <div className={`border p-3 ${detected ? "border-[#f0a39a] bg-[#fff0ed]" : "border-[#d0ccc7] bg-white"}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="vv-label">OWASP ZAP cross-check</p>
+        <span className={`text-[9px] font-black uppercase tracking-wide ${detected ? "text-[#a61b0d]" : "text-[#676360]"}`}>
+          {detected ? "Alert raised" : "No alert"}
+        </span>
+      </div>
+      <p className="mt-1 text-[10px] text-[#676360]">
+        {compact(zap.note)}
+        {zap.scan_completed === false ? " (scan did not finish within its time budget)" : ""}
+      </p>
+      {alerts.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {alerts.map((alert, index) => (
+            <div key={index} className="border border-[#d0ccc7] bg-white p-2 font-mono text-[9px]">
+              <span className="font-bold">{compact(alert.name)}</span> · risk {compact(alert.risk)} ·
+              confidence {compact(alert.confidence)} · param {compact(alert.param)}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -346,6 +434,7 @@ export default function EvidenceViewer({ content, detectorId }: { content: DataO
 
   let summary: React.ReactNode;
   if (detectorId === "command_injection") summary = <CommandInjectionProof content={content} />;
+  else if (detectorId === "sql_injection") summary = <SqlInjectionProof content={content} />;
   else if (detectorId === "weak_tls") summary = <TlsProof content={content} />;
   else if (detectorId === "sensitive_files") summary = <SensitiveFilesProof content={content} />;
   else if (detectorId === "weak_auth") summary = <WeakAuthProof content={content} />;

@@ -8,7 +8,8 @@ import type {
   UserCreatePayload,
 } from "../types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:9000/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = sessionStorage.getItem("vulnvista_access_token");
@@ -25,8 +26,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     window.dispatchEvent(new Event("vulnvista:unauthorized"));
   }
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { detail?: string } | null;
-    throw new Error(body?.detail ?? `${init?.method ?? "GET"} ${path} failed: ${response.status}`);
+    const body = (await response.json().catch(() => null)) as {
+      detail?: string;
+    } | null;
+    throw new Error(
+      body?.detail ??
+        `${init?.method ?? "GET"} ${path} failed: ${response.status}`,
+    );
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -42,17 +48,25 @@ export const api = {
   me: () => request<User>("/auth/me"),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
   createUser: (payload: UserCreatePayload) =>
-    request<User>("/auth/users", { method: "POST", body: JSON.stringify(payload) }),
+    request<User>("/auth/users", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   listTargets: () => request<Target[]>("/targets"),
   createTarget: (payload: TargetCreatePayload) =>
-    request<Target>("/targets", { method: "POST", body: JSON.stringify(payload) }),
+    request<Target>("/targets", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   listScans: () => request<Scan[]>("/scans"),
   getScan: (id: string) => request<Scan>(`/scans/${id}`),
   createScan: (payload: { target_id: string; scan_profile?: string }) =>
     request<Scan>("/scans", { method: "POST", body: JSON.stringify(payload) }),
   getScanFindings: (id: string) => request<Finding[]>(`/scans/${id}/findings`),
   listFindings: (params?: { target_id?: string; severity?: string }) => {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const query = new URLSearchParams(
+      params as Record<string, string>,
+    ).toString();
     return request<Finding[]>(`/findings${query ? `?${query}` : ""}`);
   },
   updateFindingStatus: (id: string, finding_status: FindingStatus) =>

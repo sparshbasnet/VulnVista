@@ -54,7 +54,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vulnvista}:${POSTGRES_PASSWORD:-change-me-in-dev}@postgres:5432/${POSTGRES_DB:-vulnvista}
       NVD_API_KEY: ${NVD_API_KEY:-}
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BACKEND_PORT:-9000}:9000"
     volumes:
       # Live-reload source mount for development.
       - ./backend/app:/app/app
@@ -75,7 +75,7 @@ services:
     depends_on:
       - backend
     environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:9000/api}
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     volumes:

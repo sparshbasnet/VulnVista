@@ -183,7 +183,7 @@ not overwrite it.
 docker compose up --build # starts postgres + backend + frontend
 ```
 
-- Backend API: <http://localhost:8000/api/health>
+- Backend API: <http://localhost:9000/api/health>
 - Frontend dashboard: <http://localhost:5173>
 
 Sign in with `INITIAL_ADMIN_USERNAME` (or `INITIAL_ADMIN_EMAIL`) and

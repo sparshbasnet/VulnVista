@@ -11,7 +11,7 @@ export interface DetectorMeta {
 }
 
 export const DETECTORS: DetectorMeta[] = [
-  { n: 1, title: "SQL Injection", file: "sql_injection.py", key: null },
+  { n: 1, title: "SQL Injection", file: "sql_injection.py", key: "sql_injection" },
   { n: 2, title: "Command Injection", file: "command_injection.py", key: "command_injection" },
   { n: 3, title: "Cross-Site Scripting", file: "xss.py", key: null },
   { n: 4, title: "File Upload", file: "file_upload.py", key: null },
