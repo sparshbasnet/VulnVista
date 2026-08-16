@@ -23,6 +23,8 @@ interface Phase {
 type ProfileId =
   | "command_injection"
   | "sql_injection"
+  | "xss"
+  | "path_traversal"
   | "weak_auth"
   | "sensitive_files"
   | "vulnerable_services"
@@ -65,6 +67,34 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "or query parameter to probe, then confirms SQL injection with an error-signature, " +
       "boolean-blind, and time-blind signal. Use Advanced below for a login, a session " +
       "cookie, or an exact parameter to target. http://dvwa is a bundled lab target requiring no setup.",
+  },
+  xss: {
+    label: "Cross-Site Scripting (XSS)",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for XSS",
+    scanningLabel: "Discovering inputs & validating execution in Chromium…",
+    noFindingLabel: "No browser-executable XSS detected on this target",
+    help:
+      "Works against any target with discoverable form fields or query parameters. The " +
+      "scanner submits a unique harmless canary and confirms a finding only when Chromium " +
+      "observes it execute and modify the page DOM—reflection alone is not reported as XSS. " +
+      "Use Advanced for authenticated targets or an exact input. http://dvwa uses the bundled " +
+      "reflected-XSS lab preset automatically.",
+  },
+  path_traversal: {
+    label: "Path Traversal / File Inclusion",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for path traversal",
+    scanningLabel: "Submitting controlled canary traversal variants…",
+    noFindingLabel: "No path traversal detected on this target",
+    help:
+      "Confirms path traversal only by retrieving a harmless controlled canary outside the " +
+      "intended content directory. It never requests /etc/passwd, environment files, or other " +
+      "real system data. The bundled DVWA target includes the canary and endpoint preset. For " +
+      "another authorized target, configure its canary path, exact marker, endpoint, and " +
+      "parameter under Advanced.",
   },
   weak_auth: {
     label: "Weak Authentication",
@@ -208,6 +238,8 @@ export default function Scans() {
   const [advParameter, setAdvParameter] = useState("");
   const [advPath, setAdvPath] = useState("");
   const [advXmlEndpoint, setAdvXmlEndpoint] = useState("");
+  const [advCanaryPath, setAdvCanaryPath] = useState("");
+  const [advCanaryMarker, setAdvCanaryMarker] = useState("");
   const [busy, setBusy] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -243,6 +275,8 @@ export default function Scans() {
     setAdvParameter("");
     setAdvPath("");
     setAdvXmlEndpoint("");
+    setAdvCanaryPath("");
+    setAdvCanaryMarker("");
   }
 
   function selectProfile(next: ProfileId) {
@@ -330,6 +364,8 @@ export default function Scans() {
         else scanConfig.exec_path = advPath.trim();
       }
       if (advXmlEndpoint.trim()) scanConfig.xml_endpoint = advXmlEndpoint.trim();
+      if (advCanaryPath.trim()) scanConfig.canary_path = advCanaryPath.trim();
+      if (advCanaryMarker.trim()) scanConfig.canary_marker = advCanaryMarker.trim();
 
       const p1 = begin(existingTarget ? `Using target ${existingTarget.name}…` : `Registering target ${url.trim()}…`);
       const target = existingTarget ?? await api.createTarget({
@@ -529,7 +565,7 @@ export default function Scans() {
                   <span className="text-[#a61b0d]">＋</span>
                 </summary>
                 <fieldset disabled={Boolean(selectedRegisteredTarget)} className="grid gap-3 border-t border-[#aaa6a1] p-3 disabled:opacity-50 sm:grid-cols-2">
-                  {(profile === "command_injection" || profile === "sql_injection") && (
+                  {(profile === "command_injection" || profile === "sql_injection" || profile === "xss" || profile === "path_traversal") && (
                     <>
                       <input aria-label="Login username" type="text" value={advUsername} onChange={(event) => setAdvUsername(event.target.value)} placeholder="Login username" className="vv-input" />
                       <input aria-label="Login password" type="password" value={advPassword} onChange={(event) => setAdvPassword(event.target.value)} placeholder="Login password" className="vv-input" />
@@ -544,6 +580,12 @@ export default function Scans() {
                   )}
                   {profile === "xxe" && (
                     <input aria-label="XML endpoint path" type="text" value={advXmlEndpoint} onChange={(event) => setAdvXmlEndpoint(event.target.value)} placeholder="XML endpoint path (e.g. /api/import) — required unless targeting the Juice Shop lab" className="vv-input sm:col-span-2" />
+                  )}
+                  {profile === "path_traversal" && (
+                    <>
+                      <input aria-label="Controlled canary path" type="text" value={advCanaryPath} onChange={(event) => setAdvCanaryPath(event.target.value)} placeholder="Canary path outside allowed directory" className="vv-input" />
+                      <input aria-label="Controlled canary marker" type="text" value={advCanaryMarker} onChange={(event) => setAdvCanaryMarker(event.target.value)} placeholder="Exact text stored in canary file" className="vv-input" />
+                    </>
                   )}
                   {profile === "sql_injection" && (
                     <label className="flex items-start gap-3 sm:col-span-2">

@@ -51,6 +51,7 @@ cd backend
 uv run python scripts/manual_check_sensitive_files.py
 uv run python scripts/manual_check_sensitive_files.py --base-url http://localhost:3000
 uv run python scripts/manual_check_xss.py --base-url http://localhost:8081
+uv run python scripts/manual_check_path_traversal.py --base-url http://localhost:8080
 ```
 
 `vulnerable_services` needs `nmap` and `searchsploit` on PATH (both already in the

@@ -99,6 +99,30 @@ async def test_browser_execution_confirms_xss(monkeypatch: pytest.MonkeyPatch) -
     assert result.cvss_score == 8.2
 
 
+async def test_juice_shop_preset_targets_angular_search_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_http_request(request: httpx.Request) -> httpx.Response:
+        pytest.fail(f"Juice Shop preset should not need form discovery: {request.url}")
+
+    async def executed(self, candidate, payload, marker, client, cfg):
+        assert candidate.url == "http://juice-shop:3000/#/search"
+        assert candidate.method == "GET"
+        assert candidate.param == "q"
+        return True, True
+
+    _mock_client(monkeypatch, unexpected_http_request)
+    monkeypatch.setattr(XSSDetector, "_browser_probe", executed)
+
+    result = await XSSDetector().check(
+        ScanContext(target_id="t1", base_url="http://juice-shop:3000")
+    )
+
+    assert result.validation_status == "CONFIRMED"
+    assert result.endpoint == "http://juice-shop:3000/#/search"
+    assert result.evidence["candidate_source"] == "lab preset"
+
+
 async def test_no_inputs_returns_actionable_error(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="<html><body>No inputs</body></html>")
