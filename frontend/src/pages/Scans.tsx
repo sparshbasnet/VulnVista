@@ -24,6 +24,7 @@ type ProfileId =
   | "command_injection"
   | "sql_injection"
   | "xss"
+  | "file_upload"
   | "path_traversal"
   | "weak_auth"
   | "sensitive_files"
@@ -81,6 +82,19 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "observes it execute and modify the page DOM—reflection alone is not reported as XSS. " +
       "Use Advanced for authenticated targets or an exact input. http://dvwa uses the bundled " +
       "reflected-XSS lab preset automatically.",
+  },
+  file_upload: {
+    label: "Unrestricted File Upload",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan file-upload controls",
+    scanningLabel: "Testing extension/MIME validation & public retrieval…",
+    noFindingLabel: "No unrestricted file upload detected on this target",
+    help:
+      "Tests upload handling with harmless plain-text canaries. One canary uses a .php " +
+      "filename but contains no PHP tags or executable code. A critical finding is confirmed " +
+      "only when that exact marker is accepted and publicly retrievable. The bundled DVWA " +
+      "target provides the upload endpoint and public path automatically.",
   },
   path_traversal: {
     label: "Path Traversal / File Inclusion",
@@ -240,6 +254,9 @@ export default function Scans() {
   const [advXmlEndpoint, setAdvXmlEndpoint] = useState("");
   const [advCanaryPath, setAdvCanaryPath] = useState("");
   const [advCanaryMarker, setAdvCanaryMarker] = useState("");
+  const [advUploadPath, setAdvUploadPath] = useState("");
+  const [advFileField, setAdvFileField] = useState("");
+  const [advPublicBasePath, setAdvPublicBasePath] = useState("");
   const [busy, setBusy] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -277,6 +294,9 @@ export default function Scans() {
     setAdvXmlEndpoint("");
     setAdvCanaryPath("");
     setAdvCanaryMarker("");
+    setAdvUploadPath("");
+    setAdvFileField("");
+    setAdvPublicBasePath("");
   }
 
   function selectProfile(next: ProfileId) {
@@ -366,6 +386,12 @@ export default function Scans() {
       if (advXmlEndpoint.trim()) scanConfig.xml_endpoint = advXmlEndpoint.trim();
       if (advCanaryPath.trim()) scanConfig.canary_path = advCanaryPath.trim();
       if (advCanaryMarker.trim()) scanConfig.canary_marker = advCanaryMarker.trim();
+      if (advUploadPath.trim()) {
+        if (/^https?:\/\//i.test(advUploadPath.trim())) scanConfig.upload_url = advUploadPath.trim();
+        else scanConfig.upload_path = advUploadPath.trim();
+      }
+      if (advFileField.trim()) scanConfig.file_field = advFileField.trim();
+      if (advPublicBasePath.trim()) scanConfig.public_base_path = advPublicBasePath.trim();
 
       const p1 = begin(existingTarget ? `Using target ${existingTarget.name}…` : `Registering target ${url.trim()}…`);
       const target = existingTarget ?? await api.createTarget({
@@ -565,7 +591,7 @@ export default function Scans() {
                   <span className="text-[#a61b0d]">＋</span>
                 </summary>
                 <fieldset disabled={Boolean(selectedRegisteredTarget)} className="grid gap-3 border-t border-[#aaa6a1] p-3 disabled:opacity-50 sm:grid-cols-2">
-                  {(profile === "command_injection" || profile === "sql_injection" || profile === "xss" || profile === "path_traversal") && (
+                  {(profile === "command_injection" || profile === "sql_injection" || profile === "xss" || profile === "path_traversal" || profile === "file_upload") && (
                     <>
                       <input aria-label="Login username" type="text" value={advUsername} onChange={(event) => setAdvUsername(event.target.value)} placeholder="Login username" className="vv-input" />
                       <input aria-label="Login password" type="password" value={advPassword} onChange={(event) => setAdvPassword(event.target.value)} placeholder="Login password" className="vv-input" />
@@ -585,6 +611,13 @@ export default function Scans() {
                     <>
                       <input aria-label="Controlled canary path" type="text" value={advCanaryPath} onChange={(event) => setAdvCanaryPath(event.target.value)} placeholder="Canary path outside allowed directory" className="vv-input" />
                       <input aria-label="Controlled canary marker" type="text" value={advCanaryMarker} onChange={(event) => setAdvCanaryMarker(event.target.value)} placeholder="Exact text stored in canary file" className="vv-input" />
+                    </>
+                  )}
+                  {profile === "file_upload" && (
+                    <>
+                      <input aria-label="Upload endpoint" type="text" value={advUploadPath} onChange={(event) => setAdvUploadPath(event.target.value)} placeholder="Upload path or full URL" className="vv-input sm:col-span-2" />
+                      <input aria-label="File field name" type="text" value={advFileField} onChange={(event) => setAdvFileField(event.target.value)} placeholder="Multipart file field name" className="vv-input" />
+                      <input aria-label="Public upload base path" type="text" value={advPublicBasePath} onChange={(event) => setAdvPublicBasePath(event.target.value)} placeholder="Public upload base path" className="vv-input" />
                     </>
                   )}
                   {profile === "sql_injection" && (
@@ -607,8 +640,12 @@ export default function Scans() {
                     </label>
                   )}
                   <input aria-label="Session cookie" type="text" value={advCookie} onChange={(event) => setAdvCookie(event.target.value)} placeholder="Session cookie (name=value; name2=value2)" className="vv-input sm:col-span-2" />
-                  <input aria-label="Exact parameter name" type="text" value={advParameter} onChange={(event) => setAdvParameter(event.target.value)} placeholder="Exact parameter name (e.g. ip)" className="vv-input" />
-                  <input aria-label="Exact injection path or URL" type="text" value={advPath} onChange={(event) => setAdvPath(event.target.value)} placeholder="Exact injection path or full URL" className="vv-input" />
+                  {profile !== "file_upload" && (
+                    <>
+                      <input aria-label="Exact parameter name" type="text" value={advParameter} onChange={(event) => setAdvParameter(event.target.value)} placeholder="Exact parameter name (e.g. ip)" className="vv-input" />
+                      <input aria-label="Exact injection path or URL" type="text" value={advPath} onChange={(event) => setAdvPath(event.target.value)} placeholder="Exact injection path or full URL" className="vv-input" />
+                    </>
+                  )}
                   <p className="text-[9px] leading-relaxed text-[#676360] sm:col-span-2">
                     {selectedRegisteredTarget
                       ? "This run reuses the authorization and stored scan configuration of the selected target. Register a new target to change these overrides."
