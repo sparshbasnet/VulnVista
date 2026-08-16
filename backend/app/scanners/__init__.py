@@ -13,6 +13,7 @@ from app.scanners.sensitive_files import SensitiveFilesDetector
 from app.scanners.vulnerable_services import VulnerableServicesDetector
 from app.scanners.weak_auth import WeakAuthDetector
 from app.scanners.weak_tls import WeakTLSDetector
+from app.scanners.xss import XSSDetector
 from app.scanners.xxe import XXEDetector
 
 # detector_id -> singleton instance
@@ -25,6 +26,7 @@ DETECTOR_REGISTRY: dict[str, BaseDetector] = {
         VulnerableServicesDetector(),
         WeakTLSDetector(),
         CSRFDetector(),
+        XSSDetector(),
         XXEDetector(),
     )
 }
@@ -38,6 +40,7 @@ SCAN_PROFILES: dict[str, list[str]] = {
     "vulnerable_services": ["vulnerable_services"],
     "weak_tls": ["weak_tls"],
     "csrf": ["csrf"],
+    "xss": ["xss"],
     "xxe": ["xxe"],
 }
 

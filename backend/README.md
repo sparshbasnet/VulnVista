@@ -12,9 +12,12 @@ Dependencies are managed with [uv](https://docs.astral.sh/uv/):
 ```bash
 cd backend
 uv sync
+uv run playwright install chromium
 ```
 
-This installs both runtime and dev dependency groups (pytest, ruff) into `.venv`.
+This installs both runtime and dev dependency groups (pytest, ruff) into `.venv`, plus the
+Chromium binary required for browser-validated XSS scans. The backend Docker image performs
+the browser installation automatically.
 
 ## Running tests
 
@@ -47,6 +50,7 @@ docker compose -f lab/docker-compose.yml up -d juice-shop
 cd backend
 uv run python scripts/manual_check_sensitive_files.py
 uv run python scripts/manual_check_sensitive_files.py --base-url http://localhost:3000
+uv run python scripts/manual_check_xss.py --base-url http://localhost:8081
 ```
 
 `vulnerable_services` needs `nmap` and `searchsploit` on PATH (both already in the

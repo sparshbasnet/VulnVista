@@ -27,7 +27,7 @@ services:
       -config api.disablekey=false
       -config network.localServers.mainProxy.behindNat=false
     ports:
-      - "8080:8080"
+      - "8090:8080"
     networks:
       - vulnvista_net
     restart: unless-stopped

@@ -23,8 +23,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends nmap git \
     && ln -s /opt/exploitdb/searchsploit /usr/local/bin/searchsploit \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml ./
-RUN uv sync --no-install-project
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project
+
+# XSS findings require real browser-side execution, not reflection alone.
+RUN uv run playwright install --with-deps chromium
 
 COPY . .
 RUN uv sync
