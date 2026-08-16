@@ -1,2 +1,1 @@
 VULNVISTA_PATH_TRAVERSAL_CANARY_7F3A9C2E
-This harmless file exists only to validate controlled path traversal in the VulnVista lab.
