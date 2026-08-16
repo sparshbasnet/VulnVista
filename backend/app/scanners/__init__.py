@@ -9,6 +9,7 @@ here.
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
 from app.scanners.command_injection import CommandInjectionDetector
 from app.scanners.csrf import CSRFDetector
+from app.scanners.path_traversal import PathTraversalDetector
 from app.scanners.sensitive_files import SensitiveFilesDetector
 from app.scanners.sql_injection import SQLInjectionDetector
 from app.scanners.vulnerable_services import VulnerableServicesDetector
@@ -23,6 +24,7 @@ DETECTOR_REGISTRY: dict[str, BaseDetector] = {
     for detector in (
         CommandInjectionDetector(),
         SQLInjectionDetector(),
+        PathTraversalDetector(),
         WeakAuthDetector(),
         SensitiveFilesDetector(),
         VulnerableServicesDetector(),
@@ -38,6 +40,7 @@ SCAN_PROFILES: dict[str, list[str]] = {
     "default": ["command_injection"],
     "command_injection": ["command_injection"],
     "sql_injection": ["sql_injection"],
+    "path_traversal": ["path_traversal"],
     "weak_auth": ["weak_auth"],
     "sensitive_files": ["sensitive_files"],
     "vulnerable_services": ["vulnerable_services"],

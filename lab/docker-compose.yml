@@ -17,6 +17,9 @@ services:
     restart: unless-stopped
     ports:
       - "${DVWA_PORT:-8080}:80"
+    volumes:
+      # Harmless controlled file outside the web root for path-traversal validation.
+      - ./dvwa-canary/vulnvista-path-traversal-canary.txt:/var/lib/vulnvista-canary/vulnvista-path-traversal-canary.txt:ro
     networks:
       - vulnvista_net
 

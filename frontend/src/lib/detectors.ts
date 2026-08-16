@@ -15,7 +15,7 @@ export const DETECTORS: DetectorMeta[] = [
   { n: 2, title: "Command Injection", file: "command_injection.py", key: "command_injection" },
   { n: 3, title: "Cross-Site Scripting", file: "xss.py", key: "xss" },
   { n: 4, title: "File Upload", file: "file_upload.py", key: null },
-  { n: 5, title: "Path Traversal", file: "path_traversal.py", key: null },
+  { n: 5, title: "Path Traversal", file: "path_traversal.py", key: "path_traversal" },
   { n: 6, title: "CSRF", file: "csrf.py", key: "csrf" },
   { n: 7, title: "Access Control / IDOR", file: "idor.py", key: null },
   { n: 8, title: "JWT / Session", file: "jwt_session.py", key: null },
