@@ -30,6 +30,7 @@ type ProfileId =
   | "sensitive_files"
   | "misconfiguration"
   | "ssrf"
+  | "idor"
   | "vulnerable_services"
   | "weak_tls"
   | "csrf"
@@ -166,6 +167,21 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "services, or third-party hosts. The bundled Juice Shop preset authenticates, checks " +
       "its profile-image URL importer, and restores the original image setting afterward.",
   },
+  idor: {
+    label: "Broken Access Control / IDOR",
+    targetType: "webapp",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan for broken access control",
+    scanningLabel: "Signing in as two accounts & comparing object access…",
+    noFindingLabel: "No broken object-level access control detected on this target",
+    help:
+      "Signs in as two separate accounts and checks whether the first can read an object " +
+      "owned by the second. Every request is read-only — nothing is modified or deleted — " +
+      "and a finding is confirmed only when the data returned is provably the second " +
+      "account's. The bundled Juice Shop preset provisions two synthetic @lab.invalid " +
+      "accounts and compares their baskets. For another authorized target, supply the two " +
+      "accounts and its owner-scoped object path under Advanced.",
+  },
   vulnerable_services: {
     label: "Vulnerable Services (Metasploitable2)",
     targetType: "metasploitable2",
@@ -290,6 +306,12 @@ export default function Scans() {
   const [advSsrfEndpoint, setAdvSsrfEndpoint] = useState("");
   const [advSsrfParameter, setAdvSsrfParameter] = useState("");
   const [advSsrfRequestStyle, setAdvSsrfRequestStyle] = useState("form");
+  const [advIdorUserA, setAdvIdorUserA] = useState("");
+  const [advIdorPassA, setAdvIdorPassA] = useState("");
+  const [advIdorUserB, setAdvIdorUserB] = useState("");
+  const [advIdorPassB, setAdvIdorPassB] = useState("");
+  const [advIdorObjectTemplate, setAdvIdorObjectTemplate] = useState("");
+  const [advIdorOwnerMarker, setAdvIdorOwnerMarker] = useState("");
   const [busy, setBusy] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -335,6 +357,12 @@ export default function Scans() {
     setAdvSsrfEndpoint("");
     setAdvSsrfParameter("");
     setAdvSsrfRequestStyle("form");
+    setAdvIdorUserA("");
+    setAdvIdorPassA("");
+    setAdvIdorUserB("");
+    setAdvIdorPassB("");
+    setAdvIdorObjectTemplate("");
+    setAdvIdorOwnerMarker("");
   }
 
   function selectProfile(next: ProfileId) {
@@ -442,6 +470,16 @@ export default function Scans() {
         scanConfig.request_style = advSsrfRequestStyle;
         scanConfig.request_method = advSsrfRequestStyle === "query" ? "GET" : "POST";
       }
+      if (advIdorUserA.trim() && advIdorPassA.trim()) {
+        scanConfig.user_a_username = advIdorUserA.trim();
+        scanConfig.user_a_password = advIdorPassA.trim();
+      }
+      if (advIdorUserB.trim() && advIdorPassB.trim()) {
+        scanConfig.user_b_username = advIdorUserB.trim();
+        scanConfig.user_b_password = advIdorPassB.trim();
+      }
+      if (advIdorObjectTemplate.trim()) scanConfig.object_path_template = advIdorObjectTemplate.trim();
+      if (advIdorOwnerMarker.trim()) scanConfig.owner_marker_json_path = advIdorOwnerMarker.trim();
 
       const p1 = begin(existingTarget ? `Using target ${existingTarget.name}…` : `Registering target ${url.trim()}…`);
       const target = existingTarget ?? await api.createTarget({
@@ -685,6 +723,17 @@ export default function Scans() {
                         <option value="json">POST JSON</option>
                         <option value="query">GET query</option>
                       </select>
+                    </>
+                  )}
+                  {profile === "idor" && (
+                    <>
+                      <input aria-label="Login path" type="text" value={advLoginPath} onChange={(event) => setAdvLoginPath(event.target.value)} placeholder="Login path (e.g. /rest/user/login)" className="vv-input sm:col-span-2" />
+                      <input aria-label="First account username" type="text" value={advIdorUserA} onChange={(event) => setAdvIdorUserA(event.target.value)} placeholder="First account username/email" className="vv-input" />
+                      <input aria-label="First account password" type="password" value={advIdorPassA} onChange={(event) => setAdvIdorPassA(event.target.value)} placeholder="First account password" className="vv-input" />
+                      <input aria-label="Second account username" type="text" value={advIdorUserB} onChange={(event) => setAdvIdorUserB(event.target.value)} placeholder="Second account username/email" className="vv-input" />
+                      <input aria-label="Second account password" type="password" value={advIdorPassB} onChange={(event) => setAdvIdorPassB(event.target.value)} placeholder="Second account password" className="vv-input" />
+                      <input aria-label="Owner-scoped object path" type="text" value={advIdorObjectTemplate} onChange={(event) => setAdvIdorObjectTemplate(event.target.value)} placeholder="Object path with {object_id} (e.g. /api/orders/{object_id})" className="vv-input sm:col-span-2" />
+                      <input aria-label="Owner field path" type="text" value={advIdorOwnerMarker} onChange={(event) => setAdvIdorOwnerMarker(event.target.value)} placeholder="Owner field in response JSON (e.g. data.UserId)" className="vv-input sm:col-span-2" />
                     </>
                   )}
                   {profile === "sql_injection" && (
