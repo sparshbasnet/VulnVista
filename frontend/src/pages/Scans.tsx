@@ -28,6 +28,7 @@ type ProfileId =
   | "path_traversal"
   | "weak_auth"
   | "sensitive_files"
+  | "misconfiguration"
   | "vulnerable_services"
   | "weak_tls"
   | "csrf"
@@ -137,6 +138,19 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "repository-metadata paths (.git, .env, *.js.map, and more), confirming each against " +
       "a baseline so the app's fallback page isn't mistaken for a hit. " +
       "http://juice-shop:3000 is a bundled lab target requiring no setup.",
+  },
+  misconfiguration: {
+    label: "Security Misconfiguration",
+    targetType: "webapp",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan configuration controls",
+    scanningLabel: "Inspecting headers, cookies, listings, errors, and diagnostics…",
+    noFindingLabel: "No defined security misconfiguration detected on this target",
+    help:
+      "Uses read-only HTTP requests to check security headers, session-cookie attributes, " +
+      "directory indexes, default server pages, verbose errors, and exposed diagnostic or " +
+      "management endpoints. Each weakness keeps separate evidence and informational signals " +
+      "are never promoted to high severity.",
   },
   vulnerable_services: {
     label: "Vulnerable Services (Metasploitable2)",
@@ -257,6 +271,8 @@ export default function Scans() {
   const [advUploadPath, setAdvUploadPath] = useState("");
   const [advFileField, setAdvFileField] = useState("");
   const [advPublicBasePath, setAdvPublicBasePath] = useState("");
+  const [advDirectoryPaths, setAdvDirectoryPaths] = useState("");
+  const [advDiagnosticPaths, setAdvDiagnosticPaths] = useState("");
   const [busy, setBusy] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -297,6 +313,8 @@ export default function Scans() {
     setAdvUploadPath("");
     setAdvFileField("");
     setAdvPublicBasePath("");
+    setAdvDirectoryPaths("");
+    setAdvDiagnosticPaths("");
   }
 
   function selectProfile(next: ProfileId) {
@@ -392,6 +410,12 @@ export default function Scans() {
       }
       if (advFileField.trim()) scanConfig.file_field = advFileField.trim();
       if (advPublicBasePath.trim()) scanConfig.public_base_path = advPublicBasePath.trim();
+      if (advDirectoryPaths.trim()) {
+        scanConfig.directory_paths = advDirectoryPaths.split(",").map((path) => path.trim()).filter(Boolean);
+      }
+      if (advDiagnosticPaths.trim()) {
+        scanConfig.diagnostic_paths = advDiagnosticPaths.split(",").map((path) => path.trim()).filter(Boolean);
+      }
 
       const p1 = begin(existingTarget ? `Using target ${existingTarget.name}…` : `Registering target ${url.trim()}…`);
       const target = existingTarget ?? await api.createTarget({
@@ -620,6 +644,12 @@ export default function Scans() {
                       <input aria-label="Public upload base path" type="text" value={advPublicBasePath} onChange={(event) => setAdvPublicBasePath(event.target.value)} placeholder="Public upload base path" className="vv-input" />
                     </>
                   )}
+                  {profile === "misconfiguration" && (
+                    <>
+                      <input aria-label="Directory paths" type="text" value={advDirectoryPaths} onChange={(event) => setAdvDirectoryPaths(event.target.value)} placeholder="Directory paths, comma-separated (e.g. /uploads/, /backup/)" className="vv-input sm:col-span-2" />
+                      <input aria-label="Diagnostic paths" type="text" value={advDiagnosticPaths} onChange={(event) => setAdvDiagnosticPaths(event.target.value)} placeholder="Diagnostic paths, comma-separated (e.g. /actuator/env, /debug/vars)" className="vv-input sm:col-span-2" />
+                    </>
+                  )}
                   {profile === "sql_injection" && (
                     <label className="flex items-start gap-3 sm:col-span-2">
                       <input
@@ -640,7 +670,7 @@ export default function Scans() {
                     </label>
                   )}
                   <input aria-label="Session cookie" type="text" value={advCookie} onChange={(event) => setAdvCookie(event.target.value)} placeholder="Session cookie (name=value; name2=value2)" className="vv-input sm:col-span-2" />
-                  {profile !== "file_upload" && (
+                  {(profile === "command_injection" || profile === "sql_injection" || profile === "xss" || profile === "path_traversal") && (
                     <>
                       <input aria-label="Exact parameter name" type="text" value={advParameter} onChange={(event) => setAdvParameter(event.target.value)} placeholder="Exact parameter name (e.g. ip)" className="vv-input" />
                       <input aria-label="Exact injection path or URL" type="text" value={advPath} onChange={(event) => setAdvPath(event.target.value)} placeholder="Exact injection path or full URL" className="vv-input" />

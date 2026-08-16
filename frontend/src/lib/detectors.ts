@@ -24,6 +24,6 @@ export const DETECTORS: DetectorMeta[] = [
   { n: 11, title: "XXE", file: "xxe.py", key: "xxe" },
   { n: 12, title: "Sensitive Files", file: "sensitive_files.py", key: "sensitive_files" },
   { n: 13, title: "Vulnerable Services", file: "vulnerable_services.py", key: "vulnerable_services" },
-  { n: 14, title: "Misconfiguration", file: "misconfiguration.py", key: null },
+  { n: 14, title: "Misconfiguration", file: "misconfiguration.py", key: "misconfiguration" },
   { n: 15, title: "Weak TLS", file: "weak_tls.py", key: "weak_tls" },
 ];
