@@ -102,15 +102,15 @@ services:
   # tls-test/Dockerfile for why this needs a custom build rather than a
   # pulled image (modern nginx/OpenSSL refuse to negotiate TLSv1.0/1.1 or
   # RC4/3DES/MD5 ciphers even when explicitly configured to).
-  tls-test:
-    build:
-      context: ./tls-test
-    container_name: vulnvista_tls_test
-    restart: unless-stopped
-    ports:
-      - "${TLS_TEST_PORT:-8443}:443"
-    networks:
-      - vulnvista_net
+  # tls-test:
+  #   build:
+  #     context: ./tls-test
+  #   container_name: vulnvista_tls_test
+  #   restart: unless-stopped
+  #   ports:
+  #     - "${TLS_TEST_PORT:-8443}:443"
+  #   networks:
+  #     - vulnvista_net
 
 networks:
   vulnvista_net:

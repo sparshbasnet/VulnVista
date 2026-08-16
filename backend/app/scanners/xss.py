@@ -44,8 +44,17 @@ LAB_PRESETS: dict[str, dict[str, Any]] = {
         "parameter": "name",
         "method": "GET",
     },
+    # Juice Shop's search input is an Angular route, so it is invisible to
+    # server-rendered form discovery. The `q` value is deliberately passed to
+    # an [innerHTML] sink via bypassSecurityTrustHtml in the bundled lab.
+    "juice-shop": {
+        "exec_path": "/#/search",
+        "parameter": "q",
+        "method": "GET",
+    },
 }
 LAB_PRESETS["vulnvista_dvwa"] = LAB_PRESETS["dvwa"]
+LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
 
 
 class DetectorError(Exception):
