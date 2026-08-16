@@ -20,7 +20,7 @@ export const DETECTORS: DetectorMeta[] = [
   { n: 7, title: "Access Control / IDOR", file: "idor.py", key: null },
   { n: 8, title: "JWT / Session", file: "jwt_session.py", key: null },
   { n: 9, title: "Weak Authentication", file: "weak_auth.py", key: "weak_auth" },
-  { n: 10, title: "SSRF", file: "ssrf.py", key: null },
+  { n: 10, title: "SSRF", file: "ssrf.py", key: "ssrf" },
   { n: 11, title: "XXE", file: "xxe.py", key: "xxe" },
   { n: 12, title: "Sensitive Files", file: "sensitive_files.py", key: "sensitive_files" },
   { n: 13, title: "Vulnerable Services", file: "vulnerable_services.py", key: "vulnerable_services" },
