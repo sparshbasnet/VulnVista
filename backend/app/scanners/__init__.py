@@ -14,6 +14,7 @@ from app.scanners.misconfiguration import MisconfigurationDetector
 from app.scanners.path_traversal import PathTraversalDetector
 from app.scanners.sensitive_files import SensitiveFilesDetector
 from app.scanners.sql_injection import SQLInjectionDetector
+from app.scanners.ssrf import SSRFDetector
 from app.scanners.vulnerable_services import VulnerableServicesDetector
 from app.scanners.weak_auth import WeakAuthDetector
 from app.scanners.weak_tls import WeakTLSDetector
@@ -26,6 +27,7 @@ DETECTOR_REGISTRY: dict[str, BaseDetector] = {
     for detector in (
         CommandInjectionDetector(),
         SQLInjectionDetector(),
+        SSRFDetector(),
         FileUploadDetector(),
         MisconfigurationDetector(),
         PathTraversalDetector(),
@@ -44,6 +46,7 @@ SCAN_PROFILES: dict[str, list[str]] = {
     "default": ["command_injection"],
     "command_injection": ["command_injection"],
     "sql_injection": ["sql_injection"],
+    "ssrf": ["ssrf"],
     "file_upload": ["file_upload"],
     "misconfiguration": ["misconfiguration"],
     "path_traversal": ["path_traversal"],

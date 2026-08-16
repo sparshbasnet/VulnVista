@@ -29,6 +29,7 @@ type ProfileId =
   | "weak_auth"
   | "sensitive_files"
   | "misconfiguration"
+  | "ssrf"
   | "vulnerable_services"
   | "weak_tls"
   | "csrf"
@@ -152,6 +153,19 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "management endpoints. Each weakness keeps separate evidence and informational signals " +
       "are never promoted to high severity.",
   },
+  ssrf: {
+    label: "Server-Side Request Forgery (SSRF)",
+    targetType: "webapp",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan for SSRF",
+    scanningLabel: "Submitting a controlled URL & waiting for its callback…",
+    noFindingLabel: "No attributable server-side callback was observed",
+    help:
+      "Confirms SSRF only when the target requests a unique URL served by VulnVista's own " +
+      "temporary callback listener. It never probes cloud metadata, loopback, private " +
+      "services, or third-party hosts. The bundled Juice Shop preset authenticates, checks " +
+      "its profile-image URL importer, and restores the original image setting afterward.",
+  },
   vulnerable_services: {
     label: "Vulnerable Services (Metasploitable2)",
     targetType: "metasploitable2",
@@ -273,6 +287,9 @@ export default function Scans() {
   const [advPublicBasePath, setAdvPublicBasePath] = useState("");
   const [advDirectoryPaths, setAdvDirectoryPaths] = useState("");
   const [advDiagnosticPaths, setAdvDiagnosticPaths] = useState("");
+  const [advSsrfEndpoint, setAdvSsrfEndpoint] = useState("");
+  const [advSsrfParameter, setAdvSsrfParameter] = useState("");
+  const [advSsrfRequestStyle, setAdvSsrfRequestStyle] = useState("form");
   const [busy, setBusy] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -315,6 +332,9 @@ export default function Scans() {
     setAdvPublicBasePath("");
     setAdvDirectoryPaths("");
     setAdvDiagnosticPaths("");
+    setAdvSsrfEndpoint("");
+    setAdvSsrfParameter("");
+    setAdvSsrfRequestStyle("form");
   }
 
   function selectProfile(next: ProfileId) {
@@ -415,6 +435,12 @@ export default function Scans() {
       }
       if (advDiagnosticPaths.trim()) {
         scanConfig.diagnostic_paths = advDiagnosticPaths.split(",").map((path) => path.trim()).filter(Boolean);
+      }
+      if (advSsrfEndpoint.trim()) scanConfig.ssrf_endpoint = advSsrfEndpoint.trim();
+      if (advSsrfParameter.trim()) scanConfig.parameter = advSsrfParameter.trim();
+      if (profile === "ssrf") {
+        scanConfig.request_style = advSsrfRequestStyle;
+        scanConfig.request_method = advSsrfRequestStyle === "query" ? "GET" : "POST";
       }
 
       const p1 = begin(existingTarget ? `Using target ${existingTarget.name}…` : `Registering target ${url.trim()}…`);
@@ -615,7 +641,7 @@ export default function Scans() {
                   <span className="text-[#a61b0d]">＋</span>
                 </summary>
                 <fieldset disabled={Boolean(selectedRegisteredTarget)} className="grid gap-3 border-t border-[#aaa6a1] p-3 disabled:opacity-50 sm:grid-cols-2">
-                  {(profile === "command_injection" || profile === "sql_injection" || profile === "xss" || profile === "path_traversal" || profile === "file_upload") && (
+                  {(profile === "command_injection" || profile === "sql_injection" || profile === "xss" || profile === "path_traversal" || profile === "file_upload" || profile === "ssrf") && (
                     <>
                       <input aria-label="Login username" type="text" value={advUsername} onChange={(event) => setAdvUsername(event.target.value)} placeholder="Login username" className="vv-input" />
                       <input aria-label="Login password" type="password" value={advPassword} onChange={(event) => setAdvPassword(event.target.value)} placeholder="Login password" className="vv-input" />
@@ -648,6 +674,17 @@ export default function Scans() {
                     <>
                       <input aria-label="Directory paths" type="text" value={advDirectoryPaths} onChange={(event) => setAdvDirectoryPaths(event.target.value)} placeholder="Directory paths, comma-separated (e.g. /uploads/, /backup/)" className="vv-input sm:col-span-2" />
                       <input aria-label="Diagnostic paths" type="text" value={advDiagnosticPaths} onChange={(event) => setAdvDiagnosticPaths(event.target.value)} placeholder="Diagnostic paths, comma-separated (e.g. /actuator/env, /debug/vars)" className="vv-input sm:col-span-2" />
+                    </>
+                  )}
+                  {profile === "ssrf" && (
+                    <>
+                      <input aria-label="SSRF endpoint" type="text" value={advSsrfEndpoint} onChange={(event) => setAdvSsrfEndpoint(event.target.value)} placeholder="URL-fetch endpoint path or full URL" className="vv-input sm:col-span-2" />
+                      <input aria-label="URL parameter" type="text" value={advSsrfParameter} onChange={(event) => setAdvSsrfParameter(event.target.value)} placeholder="URL parameter name (e.g. imageUrl)" className="vv-input" />
+                      <select aria-label="SSRF request style" value={advSsrfRequestStyle} onChange={(event) => setAdvSsrfRequestStyle(event.target.value)} className="vv-input">
+                        <option value="form">POST form</option>
+                        <option value="json">POST JSON</option>
+                        <option value="query">GET query</option>
+                      </select>
                     </>
                   )}
                   {profile === "sql_injection" && (
