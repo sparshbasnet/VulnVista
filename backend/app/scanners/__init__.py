@@ -11,6 +11,7 @@ from app.scanners.command_injection import CommandInjectionDetector
 from app.scanners.csrf import CSRFDetector
 from app.scanners.file_upload import FileUploadDetector
 from app.scanners.idor import IDORDetector
+from app.scanners.jwt_session import JWTSessionDetector
 from app.scanners.misconfiguration import MisconfigurationDetector
 from app.scanners.path_traversal import PathTraversalDetector
 from app.scanners.sensitive_files import SensitiveFilesDetector
@@ -31,6 +32,7 @@ DETECTOR_REGISTRY: dict[str, BaseDetector] = {
         SSRFDetector(),
         FileUploadDetector(),
         IDORDetector(),
+        JWTSessionDetector(),
         MisconfigurationDetector(),
         PathTraversalDetector(),
         WeakAuthDetector(),
@@ -51,6 +53,7 @@ SCAN_PROFILES: dict[str, list[str]] = {
     "ssrf": ["ssrf"],
     "file_upload": ["file_upload"],
     "idor": ["idor"],
+    "jwt_session": ["jwt_session"],
     "misconfiguration": ["misconfiguration"],
     "path_traversal": ["path_traversal"],
     "weak_auth": ["weak_auth"],

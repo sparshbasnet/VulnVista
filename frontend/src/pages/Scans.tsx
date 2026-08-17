@@ -31,6 +31,7 @@ type ProfileId =
   | "misconfiguration"
   | "ssrf"
   | "idor"
+  | "jwt_session"
   | "vulnerable_services"
   | "weak_tls"
   | "csrf"
@@ -182,6 +183,23 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "accounts and compares their baskets. For another authorized target, supply the two " +
       "accounts and its owner-scoped object path under Advanced.",
   },
+  jwt_session: {
+    label: "JWT / Session Weaknesses",
+    targetType: "webapp",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan JWT / session handling",
+    scanningLabel: "Signing in, parsing the token & submitting forged tokens…",
+    noFindingLabel: "No JWT or session token weakness detected on this target",
+    help:
+      "Signs in with a synthetic account to obtain a real session token, parses its claims " +
+      "(never verifying or replaying it), then submits tokens a correct server must reject — " +
+      "an unsigned alg:none token and one with an invalidated signature — each carrying a " +
+      "tampered identity. A finding is confirmed only when a forged token is accepted as a " +
+      "session; sensitive claims are masked in the evidence. The bundled Juice Shop preset " +
+      "provisions one @lab.invalid account and checks its whoami session. For another " +
+      "authorized target, configure its login, session-check endpoint, and claim mapping " +
+      "under Advanced.",
+  },
   vulnerable_services: {
     label: "Vulnerable Services (Metasploitable2)",
     targetType: "metasploitable2",
@@ -312,6 +330,11 @@ export default function Scans() {
   const [advIdorPassB, setAdvIdorPassB] = useState("");
   const [advIdorObjectTemplate, setAdvIdorObjectTemplate] = useState("");
   const [advIdorOwnerMarker, setAdvIdorOwnerMarker] = useState("");
+  const [advJwtSessionPath, setAdvJwtSessionPath] = useState("");
+  const [advJwtMarkerPath, setAdvJwtMarkerPath] = useState("");
+  const [advJwtClaimPath, setAdvJwtClaimPath] = useState("");
+  const [advJwtSubmission, setAdvJwtSubmission] = useState("header");
+  const [advJwtCookieName, setAdvJwtCookieName] = useState("");
   const [busy, setBusy] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -363,6 +386,11 @@ export default function Scans() {
     setAdvIdorPassB("");
     setAdvIdorObjectTemplate("");
     setAdvIdorOwnerMarker("");
+    setAdvJwtSessionPath("");
+    setAdvJwtMarkerPath("");
+    setAdvJwtClaimPath("");
+    setAdvJwtSubmission("header");
+    setAdvJwtCookieName("");
   }
 
   function selectProfile(next: ProfileId) {
@@ -480,6 +508,15 @@ export default function Scans() {
       }
       if (advIdorObjectTemplate.trim()) scanConfig.object_path_template = advIdorObjectTemplate.trim();
       if (advIdorOwnerMarker.trim()) scanConfig.owner_marker_json_path = advIdorOwnerMarker.trim();
+      if (advJwtSessionPath.trim()) scanConfig.session_check_path = advJwtSessionPath.trim();
+      if (advJwtMarkerPath.trim()) scanConfig.session_marker_json_path = advJwtMarkerPath.trim();
+      if (advJwtClaimPath.trim()) scanConfig.tamper_claim_path = advJwtClaimPath.trim();
+      if (profile === "jwt_session") {
+        scanConfig.token_submission = advJwtSubmission;
+        if (advJwtSubmission === "cookie" && advJwtCookieName.trim()) {
+          scanConfig.token_cookie = advJwtCookieName.trim();
+        }
+      }
 
       const p1 = begin(existingTarget ? `Using target ${existingTarget.name}…` : `Registering target ${url.trim()}…`);
       const target = existingTarget ?? await api.createTarget({
@@ -679,11 +716,25 @@ export default function Scans() {
                   <span className="text-[#a61b0d]">＋</span>
                 </summary>
                 <fieldset disabled={Boolean(selectedRegisteredTarget)} className="grid gap-3 border-t border-[#aaa6a1] p-3 disabled:opacity-50 sm:grid-cols-2">
-                  {(profile === "command_injection" || profile === "sql_injection" || profile === "xss" || profile === "path_traversal" || profile === "file_upload" || profile === "ssrf") && (
+                  {(profile === "command_injection" || profile === "sql_injection" || profile === "xss" || profile === "path_traversal" || profile === "file_upload" || profile === "ssrf" || profile === "jwt_session") && (
                     <>
                       <input aria-label="Login username" type="text" value={advUsername} onChange={(event) => setAdvUsername(event.target.value)} placeholder="Login username" className="vv-input" />
                       <input aria-label="Login password" type="password" value={advPassword} onChange={(event) => setAdvPassword(event.target.value)} placeholder="Login password" className="vv-input" />
                       <input aria-label="Login path" type="text" value={advLoginPath} onChange={(event) => setAdvLoginPath(event.target.value)} placeholder="Login path (e.g. /login.php)" className="vv-input sm:col-span-2" />
+                    </>
+                  )}
+                  {profile === "jwt_session" && (
+                    <>
+                      <input aria-label="Session-check path" type="text" value={advJwtSessionPath} onChange={(event) => setAdvJwtSessionPath(event.target.value)} placeholder="Session-check path (e.g. /rest/user/whoami)" className="vv-input sm:col-span-2" />
+                      <input aria-label="Session marker JSON path" type="text" value={advJwtMarkerPath} onChange={(event) => setAdvJwtMarkerPath(event.target.value)} placeholder="Identity field in session response (e.g. user.email)" className="vv-input" />
+                      <input aria-label="Tampered claim path" type="text" value={advJwtClaimPath} onChange={(event) => setAdvJwtClaimPath(event.target.value)} placeholder="Token claim to tamper (e.g. data.email)" className="vv-input" />
+                      <select aria-label="Token submission style" value={advJwtSubmission} onChange={(event) => setAdvJwtSubmission(event.target.value)} className="vv-input">
+                        <option value="header">Authorization header</option>
+                        <option value="cookie">Cookie</option>
+                      </select>
+                      {advJwtSubmission === "cookie" && (
+                        <input aria-label="Token cookie name" type="text" value={advJwtCookieName} onChange={(event) => setAdvJwtCookieName(event.target.value)} placeholder="Token cookie name (e.g. token)" className="vv-input" />
+                      )}
                     </>
                   )}
                   {profile === "weak_auth" && (
