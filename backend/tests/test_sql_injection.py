@@ -26,7 +26,10 @@ def test_find_sql_error_detects_signature_absent_from_baseline() -> None:
 def test_find_sql_error_ignores_signature_already_in_baseline() -> None:
     # the app's own page legitimately mentions "syntax" elsewhere — a real
     # error signature must be new, not merely present.
-    assert _find_sql_error("mysql_fetch already appears here", "mysql_fetch already appears here") is None
+    assert (
+        _find_sql_error("mysql_fetch already appears here", "mysql_fetch already appears here")
+        is None
+    )
 
 
 def test_find_sql_error_no_match() -> None:
@@ -223,7 +226,9 @@ async def test_check_dvwa_preset_falls_back_to_blind_endpoint(
         if request.url.path == "/vulnerabilities/sqli_blind/":
             idv = request.url.params.get("id", "")
             if "'1'='2" in idv:
-                return httpx.Response(200, text="<html>User ID is MISSING from the database.</html>")
+                return httpx.Response(
+                    200, text="<html>User ID is MISSING from the database.</html>"
+                )
             return httpx.Response(200, text="<html>User ID exists in the database.</html>")
         return httpx.Response(404)
 
@@ -262,7 +267,9 @@ async def test_check_many_dvwa_reports_both_endpoints_when_both_detected(
         if request.url.path == "/vulnerabilities/sqli_blind/":
             idv = request.url.params.get("id", "")
             if "'1'='2" in idv:
-                return httpx.Response(200, text="<html>User ID is MISSING from the database.</html>")
+                return httpx.Response(
+                    200, text="<html>User ID is MISSING from the database.</html>"
+                )
             return httpx.Response(200, text="<html>User ID exists in the database.</html>")
         return httpx.Response(404)
 
@@ -407,7 +414,9 @@ async def test_validate_confirms_when_both_agree(monkeypatch: pytest.MonkeyPatch
     assert "independently confirmed" in validated.evidence_summary
 
 
-async def test_validate_zap_only_escalates_manual_not_detected(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_validate_zap_only_escalates_manual_not_detected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _mock_client(monkeypatch, _no_signal_handler)
     detector = SQLInjectionDetector()
     context = ScanContext(target_id="t1", base_url=BOOLEAN_BLIND_BASE_URL, extra={"use_zap": True})

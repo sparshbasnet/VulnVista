@@ -149,7 +149,9 @@ def classify(
             "login attempts",
             cwe="CWE-307", cvss_score=6.5,
         )
-    note = "" if enumeration_checked else " (enumeration check skipped — no known_username supplied)"
+    note = (
+        "" if enumeration_checked else " (enumeration check skipped — no known_username supplied)"
+    )
     return Decision(
         False, "NOT_DETECTED", "LOW",
         f"no enumeration oracle observed and rate-limiting/lockout is enforced{note}",
@@ -176,7 +178,9 @@ class WeakAuthDetector(BaseDetector):
         )
 
         try:
-            async with httpx.AsyncClient(timeout=cfg["request_timeout"], follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                timeout=cfg["request_timeout"], follow_redirects=True
+            ) as client:
                 login = await self._resolve_login(client, base, discovery_path, cfg, source)
                 lockout_triggered, statuses = await self._check_rate_limit(client, login, cfg)
                 enum_checked, enum_leaked, enum_evidence = await self._check_enumeration(
@@ -224,7 +228,9 @@ class WeakAuthDetector(BaseDetector):
             )
 
         if cfg.get("login_path") and cfg.get("username_field") and cfg.get("password_field"):
-            form = await self._fetch_login_form(client, urljoin(f"{base}/", cfg["login_path"].lstrip("/")))
+            form = await self._fetch_login_form(
+                client, urljoin(f"{base}/", cfg["login_path"].lstrip("/"))
+            )
             return LoginForm(
                 url=form.action if form else urljoin(f"{base}/", cfg["login_path"].lstrip("/")),
                 method=(form.method if form else cfg.get("method", "POST")),
@@ -235,7 +241,11 @@ class WeakAuthDetector(BaseDetector):
                 source=source,
             )
 
-        paths = [cfg["login_path"]] if cfg.get("login_path") else [discovery_path, *COMMON_LOGIN_PATHS]
+        paths = (
+            [cfg["login_path"]]
+            if cfg.get("login_path")
+            else [discovery_path, *COMMON_LOGIN_PATHS]
+        )
         tried: set[str] = set()
         for path in paths:
             if path in tried:
@@ -263,7 +273,11 @@ class WeakAuthDetector(BaseDetector):
                 source=source,
             )
 
-        hint = f" at {cfg['login_path']}" if cfg.get("login_path") else f" at {base}{discovery_path} or common login paths"
+        hint = (
+            f" at {cfg['login_path']}"
+            if cfg.get("login_path")
+            else f" at {base}{discovery_path} or common login paths"
+        )
         raise DetectorError(
             f"No login form with a password field was found{hint}. Provide an explicit "
             "'login_path' (plus 'username_field'/'password_field' if auto-detection still "
@@ -284,7 +298,11 @@ class WeakAuthDetector(BaseDetector):
     async def _submit_login(
         self, client: httpx.AsyncClient, login: LoginForm, username: str, password: str
     ) -> httpx.Response:
-        data = {**login.fixed_fields, login.username_field: username, login.password_field: password}
+        data = {
+            **login.fixed_fields,
+            login.username_field: username,
+            login.password_field: password,
+        }
         if login.style == "json":
             return await client.post(login.url, json=data)
         return await client.post(login.url, data=data)
@@ -295,7 +313,10 @@ class WeakAuthDetector(BaseDetector):
         """Fire a small, fixed budget of failed logins against one account
         (the configured known_username, or a synthetic one) and see whether
         any attempt is ever throttled or locked out."""
-        username = cfg.get("known_username") or f"vulnvista-test-{secrets.token_hex(4)}@example.invalid"
+        username = (
+            cfg.get("known_username")
+            or f"vulnvista-test-{secrets.token_hex(4)}@example.invalid"
+        )
         statuses: list[int] = []
         lockout_triggered = False
         for _ in range(cfg["rate_limit_attempts"]):
@@ -400,7 +421,9 @@ class WeakAuthDetector(BaseDetector):
             "unknown_username_signal": unknown_signal,
         }
 
-    def _result(self, login: LoginForm, decision: Decision, evidence: dict[str, Any]) -> DetectorResult:
+    def _result(
+        self, login: LoginForm, decision: Decision, evidence: dict[str, Any]
+    ) -> DetectorResult:
         summary = (
             f"{decision.reason} (login {evidence['login_discovery']}). "
             f"login_attempts={len(evidence['login_attempt_statuses'])}, "
@@ -440,7 +463,11 @@ class WeakAuthDetector(BaseDetector):
     ) -> DetectorResult:
         parsed = urlparse(context.base_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
-        endpoint = urljoin(f"{base}/", cfg["login_path"].lstrip("/")) if cfg.get("login_path") else context.base_url
+        endpoint = (
+            urljoin(f"{base}/", cfg["login_path"].lstrip("/"))
+            if cfg.get("login_path")
+            else context.base_url
+        )
         return DetectorResult(
             detector=self.detector_id,
             vulnerability=self.name,
