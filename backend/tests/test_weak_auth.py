@@ -96,7 +96,9 @@ async def test_check_auto_discovers_login_form_and_flags_missing_lockout(
     assert result.evidence["enumeration_checked"] is False
 
 
-async def test_check_flags_enumeration_via_login_differential(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_check_flags_enumeration_via_login_differential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/login" and request.method == "GET":
             return httpx.Response(200, text=LOGIN_PAGE_HTML)

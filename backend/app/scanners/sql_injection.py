@@ -49,14 +49,14 @@ from urllib.parse import urlencode, urljoin, urlparse
 import httpx
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
-
-logger = logging.getLogger(__name__)
 from app.scanners.command_injection import (
     Candidate,
     _candidates_from_form,
     _candidates_from_query,
     parse_forms,
 )
+
+logger = logging.getLogger(__name__)
 
 # Tuning constants for the time-based signal.
 SLEEP_SECONDS = 5
@@ -265,7 +265,11 @@ def combine_with_zap(
     the manual verdict passes through completely unchanged.
     """
     if not zap_used or not zap_reachable:
-        return manual_detected, ("CONFIRMED" if manual_detected else "NOT_DETECTED"), manual_confidence
+        return (
+            manual_detected,
+            ("CONFIRMED" if manual_detected else "NOT_DETECTED"),
+            manual_confidence,
+        )
     if manual_detected and zap_detected:
         return True, "CONFIRMED", "HIGH"
     if manual_detected and not zap_detected:
@@ -422,7 +426,10 @@ class SQLInjectionDetector(BaseDetector):
         if not zap.reachable:
             note = f" OWASP ZAP cross-check requested but unavailable: {zap.note}."
         elif result.detected and zap.detected:
-            note = " OWASP ZAP's active scanner independently confirmed SQL injection on this endpoint."
+            note = (
+                " OWASP ZAP's active scanner independently confirmed SQL injection "
+                "on this endpoint."
+            )
         elif result.detected and not zap.detected:
             note = " OWASP ZAP's active scanner did not corroborate this — manual evidence stands."
         elif not result.detected and zap.detected:
@@ -444,7 +451,9 @@ class SQLInjectionDetector(BaseDetector):
             evidence={**result.evidence, "zap": zap.to_evidence()},
         )
 
-    async def _run_zap_cross_check(self, context: ScanContext, result: DetectorResult) -> ZapOutcome:
+    async def _run_zap_cross_check(
+        self, context: ScanContext, result: DetectorResult
+    ) -> ZapOutcome:
         try:
             from app.services.zap_client import zap_client
         except Exception as exc:  # missing dependency, bad config, etc.
@@ -455,7 +464,9 @@ class SQLInjectionDetector(BaseDetector):
             return ZapOutcome(True, False, False, False, [], "no endpoint/parameter to hand to ZAP")
 
         loop = asyncio.get_running_loop()
-        timeout_seconds = float(context.extra.get("zap_timeout_seconds", ZAP_DEFAULT_TIMEOUT_SECONDS))
+        timeout_seconds = float(
+            context.extra.get("zap_timeout_seconds", ZAP_DEFAULT_TIMEOUT_SECONDS)
+        )
 
         try:
             reachable = await loop.run_in_executor(None, zap_client.is_ready)
@@ -485,13 +496,17 @@ class SQLInjectionDetector(BaseDetector):
                     ),
                 )
         except Exception as exc:
-            return ZapOutcome(True, True, False, False, [], f"could not start ZAP active scan ({exc})")
+            return ZapOutcome(
+                True, True, False, False, [], f"could not start ZAP active scan ({exc})"
+            )
 
         completed = False
         started = loop.time()
         try:
             while True:
-                status = await loop.run_in_executor(None, lambda: zap_client.zap.ascan.status(scan_id))
+                status = await loop.run_in_executor(
+                    None, lambda: zap_client.zap.ascan.status(scan_id)
+                )
                 if int(status) >= 100:
                     completed = True
                     break
@@ -499,20 +514,27 @@ class SQLInjectionDetector(BaseDetector):
                     break
                 await asyncio.sleep(ZAP_POLL_INTERVAL_SECONDS)
         except Exception as exc:
-            return ZapOutcome(True, True, False, False, [], f"ZAP active scan polling failed ({exc})")
+            return ZapOutcome(
+                True, True, False, False, [], f"ZAP active scan polling failed ({exc})"
+            )
 
         try:
             alerts = await loop.run_in_executor(
                 None, lambda: zap_client.zap.core.alerts(baseurl=result.endpoint)
             )
         except Exception as exc:
-            return ZapOutcome(True, True, completed, False, [], f"could not retrieve ZAP alerts ({exc})")
+            return ZapOutcome(
+                True, True, completed, False, [], f"could not retrieve ZAP alerts ({exc})"
+            )
 
         sqli_alerts = [a for a in alerts if _is_sqli_alert(a)]
         note = (
             "scan completed"
             if completed
-            else f"scan did not finish within {timeout_seconds:.0f}s — reporting alerts found so far"
+            else (
+                f"scan did not finish within {timeout_seconds:.0f}s — "
+                "reporting alerts found so far"
+            )
         )
         return ZapOutcome(True, True, completed, bool(sqli_alerts), sqli_alerts, note)
 
@@ -696,7 +718,8 @@ class SQLInjectionDetector(BaseDetector):
         summary = (
             f"{decision.reason} (probed {evidence['candidates_probed']} candidate field(s), "
             f"{evidence['candidate_source']}). "
-            f"error_signature={evidence['error_signature']!r}, boolean_diff={evidence['boolean_diff']}, "
+            f"error_signature={evidence['error_signature']!r}, "
+            f"boolean_diff={evidence['boolean_diff']}, "
             f"time_delta={evidence['time_delta_ms']}ms."
         )
         return DetectorResult(

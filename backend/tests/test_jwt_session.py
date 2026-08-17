@@ -7,6 +7,7 @@ import pytest
 from app.scanners import get_detectors_for_profile
 from app.scanners.base import ScanContext
 from app.scanners.jwt_session import (
+    DetectorError,
     ForgeryProbe,
     JWTSessionDetector,
     Structural,
@@ -46,7 +47,7 @@ def test_parse_jwt_reads_header_and_claims_without_verifying() -> None:
 
 
 def test_parse_jwt_rejects_non_three_part_token() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(DetectorError, match="three-part JWT"):
         parse_jwt("not-a-jwt")
 
 
