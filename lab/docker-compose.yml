@@ -23,11 +23,11 @@ services:
     networks:
       - vulnvista_net
 
-# To see if juice-shop is reachable from inside the ZAP container:
-#   docker compose -f tools/docker-compose.yml exec zap sh
-#   curl -s -o /dev/null -w "%{http_code}\n" http://juice-shop:3000  # should return 200 or 304
-# Or:
-#   docker compose -f tools/docker-compose.yml exec zap curl -s -o /dev/null -w "%{http_code}\n" http://juice-shop:3000
+  # To see if juice-shop is reachable from inside the ZAP container:
+  #   docker compose -f tools/docker-compose.yml exec zap sh
+  #   curl -s -o /dev/null -w "%{http_code}\n" http://juice-shop:3000  # should return 200 or 304
+  # Or:
+  #   docker compose -f tools/docker-compose.yml exec zap curl -s -o /dev/null -w "%{http_code}\n" http://juice-shop:3000
   juice-shop:
     image: bkimminich/juice-shop
     container_name: vulnvista_juice_shop
@@ -67,53 +67,53 @@ services:
   # real port via the container's vulnvista_net DNS name (metasploitable2:<port>)
   # regardless of this mapping — host publishing here is for convenience only
   # # (e.g. manual `nmap -sV localhost -p10021,10022,...` from the host).
-  metasploitable2:
-    image: tleemcjr/metasploitable2
-    container_name: vulnvista_metasploitable2
-    restart: unless-stopped
-    command: sh -c "/bin/services.sh && tail -f /dev/null"
-    ports:
-      - "10021:21"   # ftp (vsftpd 2.3.4 — CVE-2011-2523 backdoor)
-      - "10022:22"   # ssh
-      - "10023:23"   # telnet
-      - "10025:25"   # smtp
-      - "10053:53"   # dns (bind9 — usually doesn't start, see note above)
-      - "10080:80"   # http
-      - "10111:111"  # rpcbind
-      - "10139:139"  # netbios-ssn (samba)
-      - "10445:445"  # microsoft-ds (samba)
-      - "10512:512"  # rexec
-      - "10513:513"  # rlogin
-      - "10514:514"  # rsh
-      - "11099:1099" # java-rmi
-      - "11524:1524" # ingreslock (root backdoor shell)
-      - "12049:2049" # nfs (usually doesn't start, see note above)
-      - "12121:2121" # ftp (proftpd)
-      - "13306:3306" # mysql
-      - "13632:3632" # distccd (CVE-2004-2687)
-      - "15432:5432" # postgresql
-      - "15900:5900" # vnc
-      - "16000:6000" # x11
-      - "16200:6200" # vsftpd backdoor shell (post-trigger listener)
-      - "16667:6667" # irc (UnrealIRCd — CVE-2010-2075 backdoor)
-      - "18009:8009" # ajp13 (tomcat)
-      - "18180:8180" # http (tomcat/manager)
-    networks:
-      - vulnvista_net
+  # metasploitable2:
+  #   image: tleemcjr/metasploitable2
+  #   container_name: vulnvista_metasploitable2
+  #   restart: unless-stopped
+  #   command: sh -c "/bin/services.sh && tail -f /dev/null"
+  #   ports:
+  #     - "10021:21" # ftp (vsftpd 2.3.4 — CVE-2011-2523 backdoor)
+  #     - "10022:22" # ssh
+  #     - "10023:23" # telnet
+  #     - "10025:25" # smtp
+  #     - "10053:53" # dns (bind9 — usually doesn't start, see note above)
+  #     - "10080:80" # http
+  #     - "10111:111" # rpcbind
+  #     - "10139:139" # netbios-ssn (samba)
+  #     - "10445:445" # microsoft-ds (samba)
+  #     - "10512:512" # rexec
+  #     - "10513:513" # rlogin
+  #     - "10514:514" # rsh
+  #     - "11099:1099" # java-rmi
+  #     - "11524:1524" # ingreslock (root backdoor shell)
+  #     - "12049:2049" # nfs (usually doesn't start, see note above)
+  #     - "12121:2121" # ftp (proftpd)
+  #     - "13306:3306" # mysql
+  #     - "13632:3632" # distccd (CVE-2004-2687)
+  #     - "15432:5432" # postgresql
+  #     - "15900:5900" # vnc
+  #     - "16000:6000" # x11
+  #     - "16200:6200" # vsftpd backdoor shell (post-trigger listener)
+  #     - "16667:6667" # irc (UnrealIRCd — CVE-2010-2075 backdoor)
+  #     - "18009:8009" # ajp13 (tomcat)
+  #     - "18180:8180" # http (tomcat/manager)
+  #   networks:
+  #     - vulnvista_net
 
   # # Deliberately weak TLS configuration for the weak_tls detector — see
   # tls-test/Dockerfile for why this needs a custom build rather than a
   # pulled image (modern nginx/OpenSSL refuse to negotiate TLSv1.0/1.1 or
   # RC4/3DES/MD5 ciphers even when explicitly configured to).
-  # tls-test:
-  #   build:
-  #     context: ./tls-test
-  #   container_name: vulnvista_tls_test
-  #   restart: unless-stopped
-  #   ports:
-  #     - "${TLS_TEST_PORT:-8443}:443"
-  #   networks:
-  #     - vulnvista_net
+  tls-test:
+    build:
+      context: ./tls-test
+    container_name: vulnvista_tls_test
+    restart: unless-stopped
+    ports:
+      - "${TLS_TEST_PORT:-8443}:443"
+    networks:
+      - vulnvista_net
 
 networks:
   vulnvista_net:
