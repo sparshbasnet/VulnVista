@@ -1,0 +1,41 @@
+meta {
+  name: Start Scan
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/scans
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "target_id": "{{misconfTargetId}}",
+    "scan_profile": "misconfiguration"
+  }
+}
+
+script:post-response {
+  if (res.body && res.body.id) {
+    bru.setVar("misconfScanId", res.body.id);
+  }
+}
+
+tests {
+  test("scan accepted", function() {
+    expect(res.status).to.equal(201);
+    expect(res.body.status).to.be.oneOf(["QUEUED", "RUNNING"]);
+  });
+}
+
+docs {
+  Run "Create Target" first so {{misconfTargetId}} is set. Detectors
+  run in the background — poll "Get Scan Status" until status is COMPLETED,
+  PARTIAL, FAILED, or CANCELLED, then run "Get Findings".
+}

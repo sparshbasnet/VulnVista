@@ -71,7 +71,9 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "Works against any target: paste its URL and the scanner auto-discovers a form field " +
       "or query parameter to probe, then confirms SQL injection with an error-signature, " +
       "boolean-blind, and time-blind signal. Use Advanced below for a login, a session " +
-      "cookie, or an exact parameter to target. http://dvwa is a bundled lab target requiring no setup.",
+      "cookie, or an exact parameter to target. http://dvwa and http://juice-shop:3000 are " +
+      "bundled lab targets requiring no setup — Juice Shop's product search endpoint is " +
+      "probed automatically.",
   },
   xss: {
     label: "Cross-Site Scripting (XSS)",
