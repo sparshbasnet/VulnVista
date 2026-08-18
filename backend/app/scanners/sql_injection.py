@@ -75,8 +75,8 @@ GENERIC_DEFAULTS: dict[str, Any] = {
     "max_candidates": 3,
 }
 
-# Convenience preset for the bundled DVWA lab container, so its quick-start
-# keeps working with zero configuration. Anything not listed here falls back
+# Convenience presets for the bundled lab containers, so their quick-starts
+# keep working with zero configuration. Anything not listed here falls back
 # to auto-discovery.
 LAB_PRESETS: dict[str, dict[str, Any]] = {
     "dvwa": {
@@ -95,8 +95,21 @@ LAB_PRESETS: dict[str, dict[str, Any]] = {
         "password": "password",
         "post_login_cookies": {"security": "low"},
     },
+    # Juice Shop's search box is an Angular route (`/#/search?q=`), so the
+    # query string never reaches the server and the page itself is a static
+    # SPA shell with no server-rendered forms — invisible to auto-discovery
+    # either way. The `q` value it types into actually lands, unescaped, in
+    # the product-search endpoint's own SQL query (the classic UNION-SQLi
+    # challenge), so point straight at that REST endpoint instead of the
+    # browser route.
+    "juice-shop": {
+        "injection_path": "/rest/products/search",
+        "parameter": "q",
+        "method": "GET",
+    },
 }
 LAB_PRESETS["vulnvista_dvwa"] = LAB_PRESETS["dvwa"]
+LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
 
 # Well-known driver/engine error fragments. Lowercase, matched against a
 # lowercased response body — a hit here that wasn't already in the baseline

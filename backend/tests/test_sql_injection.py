@@ -244,6 +244,28 @@ async def test_check_dvwa_preset_falls_back_to_blind_endpoint(
     assert result.evidence["candidates_probed"] == 2
 
 
+async def test_check_uses_juice_shop_lab_preset(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/rest/products/search":
+            q = request.url.params.get("q", "")
+            if "'" in q and "AND" not in q.upper():
+                return httpx.Response(
+                    500, text='Error: SQLITE_ERROR: near "\'%\'": syntax error'
+                )
+            return httpx.Response(200, text='{"status":"success","data":[]}')
+        return httpx.Response(404)
+
+    _mock_client(monkeypatch, handler)
+    result = await SQLInjectionDetector().check(
+        ScanContext(target_id="t1", base_url="http://juice-shop:3000", extra={})
+    )
+
+    assert result.validation_status == "CONFIRMED"
+    assert result.evidence["candidate_source"] == "explicit configuration"
+    assert result.endpoint == "http://juice-shop:3000/rest/products/search"
+    assert result.parameter == "q"
+
+
 async def test_check_many_dvwa_reports_both_endpoints_when_both_detected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

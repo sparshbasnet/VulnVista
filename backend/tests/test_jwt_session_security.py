@@ -3,12 +3,17 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
 from jose import jwt
 
 from app.api.auth_deps import get_current_user
 from app.core.config import get_settings
 from app.core.security import ALGORITHM, create_access_token, decode_access_token
 from app.models.user import User, UserRole
+
+
+def _bearer(token: str) -> HTTPAuthorizationCredentials:
+    return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
 
 class FakeUserDb:
@@ -106,7 +111,7 @@ async def test_current_user_accepts_active_user_session() -> None:
     user = _user()
     db = FakeUserDb(user)
 
-    current = await get_current_user(token=create_access_token(user.id), db=db)  # type: ignore[arg-type]
+    current = await get_current_user(credentials=_bearer(create_access_token(user.id)), db=db)  # type: ignore[arg-type]
 
     assert current is user
     assert db.requested_user_id == user.id
@@ -117,7 +122,9 @@ async def test_current_user_rejects_token_for_missing_user() -> None:
     missing_user_id = uuid.uuid4()
 
     with pytest.raises(HTTPException) as exc_info:
-        await get_current_user(token=create_access_token(missing_user_id), db=FakeUserDb(None))  # type: ignore[arg-type]
+        await get_current_user(
+            credentials=_bearer(create_access_token(missing_user_id)), db=FakeUserDb(None)
+        )  # type: ignore[arg-type]
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.headers == {"WWW-Authenticate": "Bearer"}
@@ -129,7 +136,7 @@ async def test_current_user_rejects_inactive_user_session() -> None:
 
     with pytest.raises(HTTPException) as exc_info:
         await get_current_user(
-            token=create_access_token(inactive_user.id),
+            credentials=_bearer(create_access_token(inactive_user.id)),
             db=FakeUserDb(inactive_user),  # type: ignore[arg-type]
         )
 
