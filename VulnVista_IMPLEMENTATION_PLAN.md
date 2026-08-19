@@ -4,7 +4,7 @@
 
 This implementation plan converts the approved VulnVista proposal into an eight-week development roadmap from project setup through final delivery.
 
-VulnVista will be implemented as a controlled vulnerability-assessment platform that detects, validates, stores, prioritises, and presents findings from intentionally vulnerable laboratory systems. The implementation will cover fifteen vulnerability categories and integrate them into a common FastAPI backend, PostgreSQL database, React dashboard, containerised deployment, CI/CD workflow, reporting module, and evaluation process.
+VulnVista will be implemented as a controlled vulnerability-assessment platform that detects, validates, stores, prioritises, and presents findings from intentionally vulnerable laboratory systems. The implementation will cover fifteen vulnerability categories and integrate them into a common FastAPI backend, PostgreSQL database, React dashboard, containerised deployment, CI/CD workflow, reporting module, an authenticated login/access-control system, and evaluation process.
 
 The project must remain restricted to approved laboratory targets such as:
 
@@ -36,7 +36,48 @@ The implementation must deliver:
 12. Docker-based deployment.
 13. GitHub Actions CI/CD.
 14. Automated and manual detector validation.
-15. Final technical documentation, academic report, presentation, and demonstration.
+15. **A login/authentication and access-control system for the platform itself.**
+16. Final technical documentation, academic report, presentation, and demonstration.
+
+---
+
+# 2A. Team Responsibilities and Vulnerability Ownership
+
+The fifteen vulnerability detectors are split equally between the three team members. Each person owns five detectors end-to-end (detector logic, safe payloads, validation, evidence, tests, and documentation for their modules).
+
+| Person | # | Vulnerability | File |
+|---|---|---|---|
+| **Nischal** | 1 | CSRF | `csrf.py` |
+| | 2 | Path Traversal | `path_traversal.py` |
+| | 3 | File Upload | `file_upload.py` |
+| | 4 | JWT / Session Security | `jwt_session.py` |
+| | 5 | Security Misconfiguration | `misconfiguration.py` |
+| **Sparsh** | 1 | SQL Injection | `sql_injection.py` |
+| | 2 | Cross-Site Scripting (XSS) | `xss.py` |
+| | 3 | Broken Access Control / IDOR | `idor.py` |
+| | 4 | Server-Side Request Forgery (SSRF) | `ssrf.py` |
+| | 5 | XML External Entity (XXE) | `xxe.py` |
+| **Sunil** | 1 | Command Injection | `command_injection.py` |
+| | 2 | Vulnerable Services | `vulnerable_services.py` |
+| | 3 | Sensitive Files | `sensitive_files.py` |
+| | 4 | Weak Authentication | `weak_auth.py` |
+| | 5 | Weak TLS | `weak_tls.py` |
+
+### Working model
+
+Detector development runs **in parallel**. In each vulnerability week, **Sparsh works on one vulnerability, Sunil works on another, and Nischal works on another** — three detectors are produced per week (one per person). Across five vulnerability weeks (Weeks 2–6) this delivers all fifteen detectors.
+
+### Parallel weekly vulnerability schedule
+
+| Week | Sparsh | Sunil | Nischal |
+|---|---|---|---|
+| **Week 2** | SQL Injection | Command Injection | File Upload |
+| **Week 3** | Cross-Site Scripting (XSS) | Weak Authentication | JWT / Session Security |
+| **Week 4** | Broken Access Control / IDOR | Sensitive Files | Path Traversal |
+| **Week 5** | Server-Side Request Forgery (SSRF) | Vulnerable Services | CSRF |
+| **Week 6** | XML External Entity (XXE) | Weak TLS | Security Misconfiguration |
+
+Shared platform work (backend, database, dashboard, reporting, containers, CI/CD, auth) is layered on top of these weeks and is a shared responsibility, as described in Section 14.
 
 ---
 
@@ -44,6 +85,9 @@ The implementation must deliver:
 
 ```text
 Authorised User
+      |
+      v
+Login / Authentication  <-- platform access control
       |
       v
 Target Management
@@ -87,6 +131,30 @@ Finding Review / Remediation / Re-scan
 # 4. Core Business Objects
 
 The implementation should distinguish the following objects.
+
+## 4.0 User (Platform Account)
+
+Represents an authenticated operator of the VulnVista platform.
+
+Suggested fields:
+
+- `id`
+- `username`
+- `email`
+- `hashed_password`
+- `role` (`ADMIN`, `ANALYST`, `VIEWER`)
+- `is_active`
+- `last_login_at`
+- `created_at`
+- `updated_at`
+
+Suggested roles:
+
+```text
+ADMIN    -> manage users, targets, scans, findings
+ANALYST  -> create/run scans, update finding status
+VIEWER   -> read-only access to findings and reports
+```
 
 ## 4.1 Target
 
@@ -145,6 +213,7 @@ Suggested metadata:
 - severity default
 - timeout
 - validation strategy
+- **owner (team member)**
 
 ## 4.4 Finding
 
@@ -224,28 +293,34 @@ vulnvista/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
+│   │   │   ├── auth.py          # login / token / user management
+│   │   │   └── ...
 │   │   ├── core/
+│   │   │   ├── security.py      # password hashing, JWT, deps
+│   │   │   └── ...
 │   │   ├── database/
 │   │   ├── models/
+│   │   │   ├── user.py          # platform account model
+│   │   │   └── ...
 │   │   ├── schemas/
 │   │   ├── services/
 │   │   ├── scanners/
 │   │   │   ├── base.py
-│   │   │   ├── sql_injection.py
-│   │   │   ├── command_injection.py
-│   │   │   ├── xss.py
-│   │   │   ├── file_upload.py
-│   │   │   ├── idor.py
-│   │   │   ├── jwt_session.py
-│   │   │   ├── path_traversal.py
-│   │   │   ├── csrf.py
-│   │   │   ├── vulnerable_services.py
-│   │   │   ├── misconfiguration.py
-│   │   │   ├── ssrf.py
-│   │   │   ├── xxe.py
-│   │   │   ├── sensitive_files.py
-│   │   │   ├── weak_auth.py
-│   │   │   └── weak_tls.py
+│   │   │   ├── sql_injection.py         # Sparsh
+│   │   │   ├── command_injection.py     # Sunil
+│   │   │   ├── xss.py                    # Sparsh
+│   │   │   ├── file_upload.py           # Nischal
+│   │   │   ├── idor.py                   # Sparsh
+│   │   │   ├── jwt_session.py           # Nischal
+│   │   │   ├── path_traversal.py        # Nischal
+│   │   │   ├── csrf.py                   # Nischal
+│   │   │   ├── vulnerable_services.py    # Sunil
+│   │   │   ├── misconfiguration.py       # Nischal
+│   │   │   ├── ssrf.py                   # Sparsh
+│   │   │   ├── xxe.py                    # Sparsh
+│   │   │   ├── sensitive_files.py        # Sunil
+│   │   │   ├── weak_auth.py              # Sunil
+│   │   │   └── weak_tls.py               # Sunil
 │   │   └── main.py
 │   ├── tests/
 │   ├── pyproject.toml
@@ -254,6 +329,8 @@ vulnvista/
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/
+│   │   │   ├── Login.tsx        # login screen
+│   │   │   └── ...
 │   │   ├── components/
 │   │   ├── services/
 │   │   ├── hooks/
@@ -285,6 +362,40 @@ vulnvista/
 
 ---
 
+# 5A. Platform Authentication / Login System
+
+VulnVista must sit behind a login so that only authorised operators can manage targets, run scans, and view findings. This is separate from the JWT/session **detector** (which tests a target's authentication) — this component secures VulnVista itself.
+
+## Design
+
+- Token-based authentication (JWT access token, optional refresh token).
+- Passwords stored using a strong one-way hash (e.g. bcrypt/argon2).
+- Role-based access control (`ADMIN`, `ANALYST`, `VIEWER`).
+- Protected backend routes via a FastAPI dependency that verifies the token and role.
+- Protected frontend routes (redirect to `/login` when unauthenticated; hide privileged actions by role).
+- Seed one initial admin account via environment variables/migration for first login.
+- Audit the identity of the user who initiates each scan (`scan.initiated_by`).
+
+## Auth tasks
+
+- [ ] Add `User` model and migration.
+- [ ] Add password hashing utilities.
+- [ ] Add JWT creation/verification utilities.
+- [ ] Implement `POST /api/auth/login`.
+- [ ] Implement `POST /api/auth/logout` (or token invalidation strategy).
+- [ ] Implement `GET /api/auth/me`.
+- [ ] Implement `POST /api/auth/users` (admin-only user creation).
+- [ ] Add auth dependency to protect all non-public routes.
+- [ ] Enforce role checks on privileged endpoints.
+- [ ] Build frontend login page and auth context/hook.
+- [ ] Add protected-route wrapper and token storage handling.
+- [ ] Seed initial admin account from environment configuration.
+- [ ] Add auth unit/API tests (valid login, invalid login, expired token, role denial).
+
+The auth system is scaffolded in **Week 1** and completed in **Week 2** so that every later feature is built behind it.
+
+---
+
 # 6. Common Detector Interface
 
 All fifteen detectors should use the same interface.
@@ -297,6 +408,7 @@ class BaseDetector:
     name: str
     vulnerability_type: str
     supported_targets: list[str]
+    owner: str  # Nischal / Sparsh / Sunil
 
     async def check(self, context): ...
 
@@ -349,16 +461,19 @@ A vulnerability milestone is considered complete only when:
 - [ ] Automated tests are added where practical.
 - [ ] Manual reproduction steps are documented.
 - [ ] Detector failure does not terminate the entire scan.
+- [ ] The owning team member has reviewed and signed off their module.
 
 ---
 
 # 8. Eight-Week Implementation Roadmap
 
-# Week 1 — Project Foundation, Architecture and Laboratory
+> **Parallel rule for vulnerability weeks (Weeks 2–6):** each week, Sparsh builds one detector, Sunil builds another, and Nischal builds another — three detectors per week.
+
+# Week 1 — Project Foundation, Architecture, Laboratory and Auth
 
 ## Objectives
 
-Build the technical foundation required by every later milestone.
+Build the technical foundation (including the platform login system) required by every later milestone.
 
 ## Tasks
 
@@ -366,7 +481,7 @@ Build the technical foundation required by every later milestone.
 
 - [ ] Confirm final scope.
 - [ ] Confirm the fifteen vulnerability categories.
-- [ ] Confirm team responsibilities.
+- [ ] Confirm team responsibilities (per Section 2A).
 - [ ] Create GitHub repository.
 - [ ] Configure branch strategy.
 - [ ] Configure issue/project board.
@@ -386,6 +501,14 @@ Build the technical foundation required by every later milestone.
 - [ ] Add environment configuration.
 - [ ] Add `.env.example`.
 - [ ] Add logging framework.
+
+### Authentication Foundation (Platform Login)
+
+- [ ] Add `User` model and migration.
+- [ ] Add password hashing and JWT utilities.
+- [ ] Scaffold `/api/auth` router (login stub).
+- [ ] Define role model (`ADMIN`, `ANALYST`, `VIEWER`).
+- [ ] Seed initial admin account from environment.
 
 ### Laboratory Setup
 
@@ -422,7 +545,7 @@ Build the technical foundation required by every later milestone.
 - [ ] Define severity levels.
 - [ ] Define confidence levels.
 
-## Week 1 Milestone — M1: Scope, Architecture and Lab Foundation
+## Week 1 Milestone — M1: Scope, Architecture, Lab Foundation and Auth Scaffold
 
 ### Acceptance Criteria
 
@@ -431,15 +554,19 @@ Build the technical foundation required by every later milestone.
 - PostgreSQL connection works.
 - Initial laboratory targets are reachable.
 - Shared detector interface is documented.
-- Database design is approved.
+- Database design (including `User`) is approved.
+- Auth scaffold and initial admin account exist.
 - Safety boundary is documented.
 
 ---
 
-# Week 2 — Core Framework + Vulnerabilities 1–3
+# Week 2 — Core Framework + Auth Completion + Vulnerabilities (Round 1)
+
+**Parallel detectors this week:** Sparsh → SQL Injection · Sunil → Command Injection · Nischal → File Upload
 
 ## Platform Tasks
 
+- [ ] Complete login/auth system (endpoints, protected routes, frontend login page, role enforcement, tests).
 - [ ] Implement target model.
 - [ ] Implement target API.
 - [ ] Implement allowlist verification.
@@ -455,7 +582,7 @@ Build the technical foundation required by every later milestone.
 
 ---
 
-## Vulnerability Milestone V1 — SQL Injection
+## Vulnerability Milestone V1 — SQL Injection · *Owner: Sparsh*
 
 **Target:** DVWA  
 **Risk:** Critical
@@ -483,7 +610,7 @@ The detector consistently identifies the seeded DVWA SQL injection scenario and 
 
 ---
 
-## Vulnerability Milestone V2 — Command Injection
+## Vulnerability Milestone V2 — Command Injection · *Owner: Sunil*
 
 **Target:** DVWA  
 **Risk:** Critical
@@ -508,52 +635,12 @@ The detector confirms command execution only through a harmless marker/timing co
 
 ---
 
-## Vulnerability Milestone V3 — Cross-Site Scripting (XSS)
-
-**Target:** DVWA / OWASP Juice Shop  
-**Risk:** Medium–High
-
-### Implementation Tasks
-
-- [ ] Identify controlled reflected/stored XSS scenario.
-- [ ] Generate unique harmless marker.
-- [ ] Submit marker through target input.
-- [ ] Use Playwright for browser-side verification.
-- [ ] Confirm execution rather than reflection alone.
-- [ ] Capture endpoint/input/evidence.
-- [ ] Add severity/confidence.
-- [ ] Add CWE mapping.
-- [ ] Add remediation guidance.
-- [ ] Add automated tests.
-- [ ] Integrate detector.
-
-### Acceptance Criteria
-
-A finding is confirmed only when browser-side execution of the controlled marker is demonstrated.
-
----
-
-## Week 2 Milestone — M2: Core Framework + First Three Detectors
-
-### Acceptance Criteria
-
-- Core scan orchestration works.
-- Findings persist to PostgreSQL.
-- SQL injection works.
-- Command injection works.
-- XSS works.
-- A scan can execute multiple detectors without one detector failure terminating the scan.
-
----
-
-# Week 3 — Vulnerabilities 4–7 + Backend Integration
-
-## Vulnerability Milestone V4 — Unrestricted File Upload
+## Vulnerability Milestone V3 — Unrestricted File Upload · *Owner: Nischal*
 
 **Target:** DVWA  
 **Risk:** Critical
 
-### Tasks
+### Implementation Tasks
 
 - [ ] Identify upload endpoint.
 - [ ] Prepare harmless test files.
@@ -574,103 +661,72 @@ The detector can prove unsafe upload handling with harmless files and verify res
 
 ---
 
-## Vulnerability Milestone V5 — Path Traversal / File Inclusion
-
-**Target:** DVWA  
-**Risk:** High–Critical
-
-### Tasks
-
-- [ ] Create/identify harmless seeded canary file.
-- [ ] Establish expected permitted path behaviour.
-- [ ] Submit controlled traversal variants.
-- [ ] Verify whether canary content is returned.
-- [ ] Avoid reading real operating-system secrets.
-- [ ] Capture request/response evidence.
-- [ ] Assign severity/confidence.
-- [ ] Add CWE mapping/remediation.
-- [ ] Integrate detector.
+## Week 2 Milestone — M2: Auth + Core Framework + First Three Detectors (3/15)
 
 ### Acceptance Criteria
 
-The detector confirms traversal only if content from the controlled file outside the intended directory is returned.
+- Login/authentication protects the platform.
+- Core scan orchestration works.
+- Findings persist to PostgreSQL.
+- SQL Injection (Sparsh), Command Injection (Sunil), and File Upload (Nischal) work.
+- A scan can execute multiple detectors without one detector failure terminating the scan.
 
 ---
 
-## Vulnerability Milestone V6 — Cross-Site Request Forgery (CSRF)
+# Week 3 — Vulnerabilities (Round 2) + Backend Integration
 
-**Target:** DVWA / Juice Shop where applicable  
+**Parallel detectors this week:** Sparsh → XSS · Sunil → Weak Authentication · Nischal → JWT / Session Security
+
+## Vulnerability Milestone V4 — Cross-Site Scripting (XSS) · *Owner: Sparsh*
+
+**Target:** DVWA / OWASP Juice Shop  
 **Risk:** Medium–High
 
 ### Tasks
 
-- [ ] Identify controlled state-changing operation.
-- [ ] Inspect anti-CSRF token presence.
-- [ ] Inspect SameSite cookie configuration.
-- [ ] Evaluate origin/referer validation where applicable.
-- [ ] Attempt controlled request without expected protection.
-- [ ] Confirm whether state change occurs.
-- [ ] Reset seeded state after testing.
-- [ ] Capture evidence.
+- [ ] Identify controlled reflected/stored XSS scenario.
+- [ ] Generate unique harmless marker.
+- [ ] Submit marker through target input.
+- [ ] Use Playwright for browser-side verification.
+- [ ] Confirm execution rather than reflection alone.
+- [ ] Capture endpoint/input/evidence.
+- [ ] Add severity/confidence.
+- [ ] Add CWE mapping.
+- [ ] Add remediation guidance.
+- [ ] Add automated tests.
+- [ ] Integrate detector.
+
+### Acceptance Criteria
+
+A finding is confirmed only when browser-side execution of the controlled marker is demonstrated.
+
+---
+
+## Vulnerability Milestone V5 — Weak Authentication Controls · *Owner: Sunil*
+
+**Target:** Juice Shop / Metasploitable 2  
+**Risk:** High
+
+### Tasks
+
+- [ ] Test controlled username enumeration.
+- [ ] Compare login error behaviour.
+- [ ] Check rate-limiting behaviour using strict safe limits.
+- [ ] Check lockout behaviour.
+- [ ] Test only approved default laboratory credentials.
+- [ ] Do not implement general password cracking.
+- [ ] Capture response/timing evidence.
 - [ ] Add severity/confidence.
 - [ ] Add CWE/remediation.
 - [ ] Integrate detector.
 
 ### Acceptance Criteria
 
-The detector demonstrates whether a controlled state-changing operation succeeds without expected CSRF protections.
+Weak authentication controls are demonstrated using synthetic accounts or approved laboratory default credentials without brute-forcing real users.
 
 ---
 
-## Vulnerability Milestone V7 — Broken Access Control / IDOR
-
-**Target:** OWASP Juice Shop  
-**Risk:** High–Critical
-
-### Tasks
-
-- [ ] Create/identify User A.
-- [ ] Create/identify User B.
-- [ ] Seed ownership-specific objects.
-- [ ] Authenticate as User A.
-- [ ] Request User A object.
-- [ ] Request or modify User B object using User A session.
-- [ ] Compare access behaviour.
-- [ ] Verify unauthorised access/change.
-- [ ] Capture object IDs and response evidence.
-- [ ] Add severity/confidence.
-- [ ] Add CWE/OWASP mapping.
-- [ ] Add remediation.
-- [ ] Integrate detector.
-
-### Acceptance Criteria
-
-The detector confirms broken object-level authorisation only when User A can access or modify data belonging to User B.
-
----
-
-## Backend Tasks
-
-- [ ] Create finding endpoints.
-- [ ] Create evidence endpoints.
-- [ ] Add scan-result retrieval.
-- [ ] Add pagination.
-- [ ] Add filtering by target.
-- [ ] Add filtering by vulnerability.
-- [ ] Add filtering by severity.
-- [ ] Add validation-status filtering.
-
-## Week 3 Milestone — M3A: Seven Integrated Vulnerabilities
-
-### Acceptance Criteria
-
-Seven detectors produce structured findings and their results are queryable using the backend API.
-
----
-
-# Week 4 — Vulnerabilities 8–11 + Dashboard
-
-## Vulnerability Milestone V8 — Authentication / Session / JWT Weaknesses
+## Vulnerability Milestone V6 — Authentication / Session / JWT Weaknesses · *Owner: Nischal*
 
 **Target:** OWASP Juice Shop  
 **Risk:** High–Critical
@@ -699,105 +755,57 @@ The detector reports a finding only when controlled invalid authentication/sessi
 
 ---
 
-## Vulnerability Milestone V9 — Weak Authentication Controls
+## Backend Tasks
 
-**Target:** Juice Shop / Metasploitable 2  
-**Risk:** High
+- [ ] Create finding endpoints.
+- [ ] Create evidence endpoints.
+- [ ] Add scan-result retrieval.
+- [ ] Add pagination.
+- [ ] Add filtering by target.
+- [ ] Add filtering by vulnerability.
+- [ ] Add filtering by severity.
+- [ ] Add validation-status filtering.
 
-### Tasks
-
-- [ ] Test controlled username enumeration.
-- [ ] Compare login error behaviour.
-- [ ] Check rate-limiting behaviour using strict safe limits.
-- [ ] Check lockout behaviour.
-- [ ] Test only approved default laboratory credentials.
-- [ ] Do not implement general password cracking.
-- [ ] Capture response/timing evidence.
-- [ ] Add severity/confidence.
-- [ ] Add CWE/remediation.
-- [ ] Integrate detector.
+## Week 3 Milestone — M2B: Six Integrated Detectors (6/15)
 
 ### Acceptance Criteria
 
-Weak authentication controls are demonstrated using synthetic accounts or approved laboratory default credentials without brute-forcing real users.
+Six detectors (SQL Injection, Command Injection, File Upload, XSS, Weak Authentication, JWT/Session) produce structured findings, and their results are queryable using the authenticated backend API.
 
 ---
 
-## Vulnerability Milestone V10 — Server-Side Request Forgery (SSRF)
+# Week 4 — Vulnerabilities (Round 3) + Dashboard MVP
+
+**Parallel detectors this week:** Sparsh → IDOR · Sunil → Sensitive Files · Nischal → Path Traversal
+
+## Vulnerability Milestone V7 — Broken Access Control / IDOR · *Owner: Sparsh*
 
 **Target:** OWASP Juice Shop  
-**Risk:** High
-
-### Tasks
-
-- [ ] Identify server-side URL-fetching functionality.
-- [ ] Configure controlled callback/internal endpoint.
-- [ ] Submit controlled URL.
-- [ ] Verify whether the application server makes the request.
-- [ ] Use only owned/private endpoints.
-- [ ] Capture callback/request evidence.
-- [ ] Add severity/confidence.
-- [ ] Add CWE/remediation.
-- [ ] Integrate detector.
-
-### Acceptance Criteria
-
-The detector confirms SSRF only when the controlled callback/internal service observes a request attributable to the target.
-
----
-
-## Vulnerability Milestone V11 — XML External Entity (XXE)
-
-**Target:** Juice Shop / controlled XML endpoint  
 **Risk:** High–Critical
 
 ### Tasks
 
-- [ ] Identify or configure controlled XML endpoint.
-- [ ] Create harmless seeded local resource.
-- [ ] Create controlled external entity reference.
-- [ ] Submit XML.
-- [ ] Verify whether entity is processed.
-- [ ] Avoid accessing system-sensitive files.
-- [ ] Capture safe evidence.
+- [ ] Create/identify User A.
+- [ ] Create/identify User B.
+- [ ] Seed ownership-specific objects.
+- [ ] Authenticate as User A.
+- [ ] Request User A object.
+- [ ] Request or modify User B object using User A session.
+- [ ] Compare access behaviour.
+- [ ] Verify unauthorised access/change.
+- [ ] Capture object IDs and response evidence.
 - [ ] Add severity/confidence.
-- [ ] Add CWE/remediation.
+- [ ] Add CWE/OWASP mapping.
+- [ ] Add remediation.
 - [ ] Integrate detector.
 
 ### Acceptance Criteria
 
-The detector confirms XXE only when processing of a harmless controlled external entity/resource is demonstrated.
+The detector confirms broken object-level authorisation only when User A can access or modify data belonging to User B.
 
 ---
 
-## Dashboard MVP Tasks
-
-- [ ] Dashboard layout.
-- [ ] Total findings card.
-- [ ] Severity distribution.
-- [ ] Findings by vulnerability category.
-- [ ] Findings by target.
-- [ ] Recent scans.
-- [ ] Scan status.
-- [ ] Findings table.
-- [ ] Finding-detail page.
-- [ ] Evidence presentation.
-- [ ] Confidence display.
-- [ ] Filtering/search.
-
-## Week 4 Milestone — M3: Majority of Vulnerabilities Integrated
-
-### Acceptance Criteria
-
-- At least 11 vulnerability modules work end-to-end.
-- Results pass through detector → API → database → dashboard.
-- Dashboard MVP can display real detector findings.
-
----
-
-# Week 5 — Vulnerabilities 12–15 + Complete MVP
-
-## Vulnerability Milestone V12 — Sensitive-File Exposure
+## Vulnerability Milestone V8 — Sensitive-File Exposure · *Owner: Sunil*
 
 **Target:** Juice Shop / Metasploitable 2  
 **Risk:** Medium–High
@@ -823,7 +831,82 @@ The detector identifies only intentionally exposed/approved laboratory files and
 
 ---
 
-## Vulnerability Milestone V13 — Known Vulnerable Services
+## Vulnerability Milestone V9 — Path Traversal / File Inclusion · *Owner: Nischal*
+
+**Target:** DVWA  
+**Risk:** High–Critical
+
+### Tasks
+
+- [ ] Create/identify harmless seeded canary file.
+- [ ] Establish expected permitted path behaviour.
+- [ ] Submit controlled traversal variants.
+- [ ] Verify whether canary content is returned.
+- [ ] Avoid reading real operating-system secrets.
+- [ ] Capture request/response evidence.
+- [ ] Assign severity/confidence.
+- [ ] Add CWE mapping/remediation.
+- [ ] Integrate detector.
+
+### Acceptance Criteria
+
+The detector confirms traversal only if content from the controlled file outside the intended directory is returned.
+
+---
+
+## Dashboard MVP Tasks
+
+- [ ] Dashboard layout (behind login).
+- [ ] Total findings card.
+- [ ] Severity distribution.
+- [ ] Findings by vulnerability category.
+- [ ] Findings by target.
+- [ ] Recent scans.
+- [ ] Scan status.
+- [ ] Findings table.
+- [ ] Finding-detail page.
+- [ ] Evidence presentation.
+- [ ] Confidence display.
+- [ ] Filtering/search.
+
+## Week 4 Milestone — M3A: Nine Integrated Detectors + Dashboard MVP (9/15)
+
+### Acceptance Criteria
+
+- Nine vulnerability modules work end-to-end.
+- Results pass through detector → API → database → dashboard.
+- Dashboard MVP can display real detector findings behind authentication.
+
+---
+
+# Week 5 — Vulnerabilities (Round 4) + Dashboard Completion
+
+**Parallel detectors this week:** Sparsh → SSRF · Sunil → Vulnerable Services · Nischal → CSRF
+
+## Vulnerability Milestone V10 — Server-Side Request Forgery (SSRF) · *Owner: Sparsh*
+
+**Target:** OWASP Juice Shop  
+**Risk:** High
+
+### Tasks
+
+- [ ] Identify server-side URL-fetching functionality.
+- [ ] Configure controlled callback/internal endpoint.
+- [ ] Submit controlled URL.
+- [ ] Verify whether the application server makes the request.
+- [ ] Use only owned/private endpoints.
+- [ ] Capture callback/request evidence.
+- [ ] Add severity/confidence.
+- [ ] Add CWE/remediation.
+- [ ] Integrate detector.
+
+### Acceptance Criteria
+
+The detector confirms SSRF only when the controlled callback/internal service observes a request attributable to the target.
+
+---
+
+## Vulnerability Milestone V11 — Known Vulnerable Services · *Owner: Sunil*
 
 **Target:** Metasploitable 2  
 **Risk:** CVE-dependent
@@ -850,32 +933,85 @@ Known laboratory service versions can be identified and associated with appropri
 
 ---
 
-## Vulnerability Milestone V14 — Security Misconfiguration
+## Vulnerability Milestone V12 — Cross-Site Request Forgery (CSRF) · *Owner: Nischal*
 
-**Target:** All laboratory targets  
+**Target:** DVWA / Juice Shop where applicable  
 **Risk:** Medium–High
 
 ### Tasks
 
-- [ ] Check security headers.
-- [ ] Check cookie security attributes.
-- [ ] Check exposed directory listing.
-- [ ] Check default pages.
-- [ ] Check debug/error-information leakage.
-- [ ] Check obviously unsafe exposed services.
-- [ ] Define each check separately.
-- [ ] Avoid reporting purely informational items as high severity.
-- [ ] Store individual evidence.
-- [ ] Add confidence/remediation.
+- [ ] Identify controlled state-changing operation.
+- [ ] Inspect anti-CSRF token presence.
+- [ ] Inspect SameSite cookie configuration.
+- [ ] Evaluate origin/referer validation where applicable.
+- [ ] Attempt controlled request without expected protection.
+- [ ] Confirm whether state change occurs.
+- [ ] Reset seeded state after testing.
+- [ ] Capture evidence.
+- [ ] Add severity/confidence.
+- [ ] Add CWE/remediation.
 - [ ] Integrate detector.
 
 ### Acceptance Criteria
 
-The detector reports clearly defined configuration weaknesses with sufficient evidence and appropriate severity.
+The detector demonstrates whether a controlled state-changing operation succeeds without expected CSRF protections.
 
 ---
 
-## Vulnerability Milestone V15 — Weak TLS Configuration
+## Dashboard / Platform Completion Tasks
+
+- [ ] Complete dashboard core views.
+- [ ] Implement severity filtering.
+- [ ] Implement confidence filtering.
+- [ ] Implement target filtering.
+- [ ] Implement vulnerability filtering.
+- [ ] Add scan history.
+- [ ] Add new/recurring/remediated comparison logic.
+- [ ] Add finding remediation status.
+- [ ] Add finding status update API.
+- [ ] Add CWE display.
+- [ ] Add CVE display.
+- [ ] Add CVSS display.
+- [ ] Add OWASP category display.
+
+## Week 5 Milestone — M3: Twelve Integrated Detectors + Full Dashboard (12/15)
+
+### Acceptance Criteria
+
+- Twelve detectors work end-to-end.
+- Dashboard supports severity/confidence/target/vulnerability filtering, scan history, and remediation status.
+
+---
+
+# Week 6 — Vulnerabilities (Round 5) + Integration, Reporting, Containers, CI/CD
+
+**Parallel detectors this week:** Sparsh → XXE · Sunil → Weak TLS · Nischal → Security Misconfiguration
+
+## Vulnerability Milestone V13 — XML External Entity (XXE) · *Owner: Sparsh*
+
+**Target:** Juice Shop / controlled XML endpoint  
+**Risk:** High–Critical
+
+### Tasks
+
+- [ ] Identify or configure controlled XML endpoint.
+- [ ] Create harmless seeded local resource.
+- [ ] Create controlled external entity reference.
+- [ ] Submit XML.
+- [ ] Verify whether entity is processed.
+- [ ] Avoid accessing system-sensitive files.
+- [ ] Capture safe evidence.
+- [ ] Add severity/confidence.
+- [ ] Add CWE/remediation.
+- [ ] Integrate detector.
+
+### Acceptance Criteria
+
+The detector confirms XXE only when processing of a harmless controlled external entity/resource is demonstrated.
+
+---
+
+## Vulnerability Milestone V14 — Weak TLS Configuration · *Owner: Sunil*
 
 **Target:** Local HTTPS test service  
 **Risk:** Medium–High
@@ -901,41 +1037,34 @@ The detector correctly identifies intentionally configured weak TLS characterist
 
 ---
 
-# Week 5 — Platform Completion Tasks
+## Vulnerability Milestone V15 — Security Misconfiguration · *Owner: Nischal*
 
-- [ ] Complete dashboard core views.
-- [ ] Implement severity filtering.
-- [ ] Implement confidence filtering.
-- [ ] Implement target filtering.
-- [ ] Implement vulnerability filtering.
-- [ ] Add scan history.
-- [ ] Add new/recurring/remediated comparison logic.
-- [ ] Add finding remediation status.
-- [ ] Add finding status update API.
-- [ ] Add CWE display.
-- [ ] Add CVE display.
-- [ ] Add CVSS display.
-- [ ] Add OWASP category display.
+**Target:** All laboratory targets  
+**Risk:** Medium–High
 
-## Week 5 Milestone — M4: MVP Complete / All 15 Vulnerabilities
+### Tasks
+
+- [ ] Check security headers.
+- [ ] Check cookie security attributes.
+- [ ] Check exposed directory listing.
+- [ ] Check default pages.
+- [ ] Check debug/error-information leakage.
+- [ ] Check obviously unsafe exposed services.
+- [ ] Define each check separately.
+- [ ] Avoid reporting purely informational items as high severity.
+- [ ] Store individual evidence.
+- [ ] Add confidence/remediation.
+- [ ] Integrate detector.
 
 ### Acceptance Criteria
 
-- All fifteen vulnerability detectors are implemented.
-- All detectors use the common framework.
-- Findings are persisted.
-- Dashboard displays the findings.
-- Core end-to-end workflow works.
-
-### Feature Freeze
-
-After this milestone, avoid adding major new features. Weeks 6–8 should focus on integration, validation, documentation, performance, defects, and delivery.
+The detector reports clearly defined configuration weaknesses with sufficient evidence and appropriate severity.
 
 ---
 
-# Week 6 — Full Integration, Reporting, Containers and CI/CD
+## Integration, Reporting, Containers and CI/CD (shared)
 
-## Backend Integration
+### Backend Integration
 
 - [ ] Finalise scan orchestration.
 - [ ] Finalise detector registry.
@@ -943,22 +1072,12 @@ After this milestone, avoid adding major new features. Weeks 6–8 should focus 
 - [ ] Add scan cancellation where appropriate.
 - [ ] Add partial scan handling.
 - [ ] Finalise error capture.
-- [ ] Add audit records.
+- [ ] Add audit records (including authenticated user).
 - [ ] Add database indexes.
 - [ ] Validate migrations.
 - [ ] Add API documentation.
 
-## Scan History
-
-- [ ] List previous scans.
-- [ ] Open previous scan.
-- [ ] Compare repeated scans.
-- [ ] Identify new findings.
-- [ ] Identify recurring findings.
-- [ ] Identify remediated findings.
-- [ ] Preserve historical findings.
-
-## Reporting
+### Reporting
 
 - [ ] Create report template.
 - [ ] Add target summary.
@@ -971,7 +1090,7 @@ After this milestone, avoid adding major new features. Weeks 6–8 should focus 
 - [ ] Export HTML.
 - [ ] Export PDF if practical within schedule.
 
-## Dockerisation
+### Dockerisation
 
 - [ ] Backend Dockerfile.
 - [ ] Frontend Dockerfile.
@@ -983,7 +1102,7 @@ After this milestone, avoid adding major new features. Weeks 6–8 should focus 
 - [ ] Internal/private laboratory networking.
 - [ ] Reproducible setup documentation.
 
-## CI/CD
+### CI/CD
 
 GitHub Actions should perform at minimum:
 
@@ -997,7 +1116,7 @@ Install Dependencies
 Lint / Static Checks
         |
         v
-Unit Tests
+Unit Tests (incl. auth)
         |
         v
 Backend Tests
@@ -1018,44 +1137,50 @@ Tasks:
 - [ ] Backend unit tests.
 - [ ] Frontend lint/build.
 - [ ] Detector tests.
+- [ ] Auth tests.
 - [ ] API tests.
 - [ ] Docker build.
 - [ ] Prevent secrets from being committed.
 - [ ] Create release candidate workflow.
 
-## Week 6 Milestone — M5A: End-to-End Integrated Prototype
+## Week 6 Milestone — M4/M5A: All 15 Detectors + Integrated, Containerised System (15/15)
 
 ### Acceptance Criteria
 
-A new environment can start the platform through documented container instructions and execute an end-to-end scan through the dashboard/backend.
+- All fifteen vulnerability detectors are implemented and use the common framework.
+- Findings are persisted and shown on the dashboard behind login.
+- A new environment can start the platform through documented container instructions and execute an end-to-end scan through the dashboard/backend.
+
+### Feature Freeze
+
+After this milestone, avoid adding major new features. Weeks 7–8 focus on validation, documentation, performance, defects, and delivery.
 
 ---
 
 # Week 7 — Detector Validation, Accuracy and Performance
 
-This week is primarily evaluation rather than new feature development.
+This week is primarily evaluation rather than new feature development. Each member validates their own five detectors, and the team cross-reviews.
 
 # 9. Detector Validation Matrix
 
-Create a matrix similar to:
-
-| # | Detector | Vulnerable Test | Secure/Negative Test | Repeat Test | Evidence Review | Result |
-|---|---|---|---|---|---|---|
-| 1 | SQL Injection | ☐ | ☐ | ☐ | ☐ | Pending |
-| 2 | Command Injection | ☐ | ☐ | ☐ | ☐ | Pending |
-| 3 | XSS | ☐ | ☐ | ☐ | ☐ | Pending |
-| 4 | File Upload | ☐ | ☐ | ☐ | ☐ | Pending |
-| 5 | Path Traversal | ☐ | ☐ | ☐ | ☐ | Pending |
-| 6 | CSRF | ☐ | ☐ | ☐ | ☐ | Pending |
-| 7 | IDOR | ☐ | ☐ | ☐ | ☐ | Pending |
-| 8 | JWT/Session | ☐ | ☐ | ☐ | ☐ | Pending |
-| 9 | Weak Authentication | ☐ | ☐ | ☐ | ☐ | Pending |
-| 10 | SSRF | ☐ | ☐ | ☐ | ☐ | Pending |
-| 11 | XXE | ☐ | ☐ | ☐ | ☐ | Pending |
-| 12 | Sensitive Files | ☐ | ☐ | ☐ | ☐ | Pending |
-| 13 | Vulnerable Services | ☐ | ☐ | ☐ | ☐ | Pending |
-| 14 | Misconfiguration | ☐ | ☐ | ☐ | ☐ | Pending |
-| 15 | Weak TLS | ☐ | ☐ | ☐ | ☐ | Pending |
+| # | Detector | Owner | Vulnerable Test | Secure/Negative Test | Repeat Test | Evidence Review | Result |
+|---|---|---|---|---|---|---|---|
+| 1 | SQL Injection | Sparsh | ☐ | ☐ | ☐ | ☐ | Pending |
+| 2 | Command Injection | Sunil | ☐ | ☐ | ☐ | ☐ | Pending |
+| 3 | File Upload | Nischal | ☐ | ☐ | ☐ | ☐ | Pending |
+| 4 | XSS | Sparsh | ☐ | ☐ | ☐ | ☐ | Pending |
+| 5 | Weak Authentication | Sunil | ☐ | ☐ | ☐ | ☐ | Pending |
+| 6 | JWT/Session | Nischal | ☐ | ☐ | ☐ | ☐ | Pending |
+| 7 | IDOR | Sparsh | ☐ | ☐ | ☐ | ☐ | Pending |
+| 8 | Sensitive Files | Sunil | ☐ | ☐ | ☐ | ☐ | Pending |
+| 9 | Path Traversal | Nischal | ☐ | ☐ | ☐ | ☐ | Pending |
+| 10 | SSRF | Sparsh | ☐ | ☐ | ☐ | ☐ | Pending |
+| 11 | Vulnerable Services | Sunil | ☐ | ☐ | ☐ | ☐ | Pending |
+| 12 | CSRF | Nischal | ☐ | ☐ | ☐ | ☐ | Pending |
+| 13 | XXE | Sparsh | ☐ | ☐ | ☐ | ☐ | Pending |
+| 14 | Weak TLS | Sunil | ☐ | ☐ | ☐ | ☐ | Pending |
+| 15 | Misconfiguration | Nischal | ☐ | ☐ | ☐ | ☐ | Pending |
+| — | Platform Auth/Login | Shared | ☐ | ☐ | ☐ | ☐ | Pending |
 
 ---
 
@@ -1113,7 +1238,8 @@ without needing to inspect raw logs.
 
 # 11. Week 7 Tasks
 
-- [ ] Test all 15 detectors.
+- [ ] Test all 15 detectors (each owner leads their own; peer cross-check).
+- [ ] Test platform auth (valid/invalid login, expired token, role denial).
 - [ ] Execute repeated scans.
 - [ ] Execute negative/secure tests where possible.
 - [ ] Calculate detection rate.
@@ -1135,12 +1261,12 @@ without needing to inspect raw logs.
 
 ### Acceptance Criteria
 
-- All 15 detector implementations have validation results.
+- All 15 detector implementations (+ auth) have validation results.
 - Critical defects are resolved.
 - Evaluation metrics are available.
 - CI/CD passes.
 - Container deployment works.
-- Dashboard works with real findings.
+- Dashboard works with real findings behind login.
 - Release candidate is ready for final demonstration preparation.
 
 ---
@@ -1158,7 +1284,7 @@ without needing to inspect raw logs.
 - [ ] Verify fresh installation.
 - [ ] Verify database migrations.
 - [ ] Verify all URLs and configuration.
-- [ ] Verify demo accounts.
+- [ ] Verify demo accounts (including at least one admin login).
 - [ ] Verify demo target state.
 
 ## Technical Documentation
@@ -1168,8 +1294,8 @@ without needing to inspect raw logs.
 - [ ] Configuration guide.
 - [ ] Architecture documentation.
 - [ ] Database documentation.
-- [ ] API documentation.
-- [ ] Detector documentation.
+- [ ] API documentation (including `/api/auth`).
+- [ ] Detector documentation (per owner).
 - [ ] Testing guide.
 - [ ] Safety/ethical controls.
 - [ ] Troubleshooting guide.
@@ -1178,10 +1304,10 @@ without needing to inspect raw logs.
 
 Suggested evidence to include:
 
-- architecture
+- architecture (including auth/login)
 - database design
 - detector framework
-- explanation of each detector
+- explanation of each detector and its owner
 - screenshots
 - sample findings
 - testing methodology
@@ -1198,18 +1324,19 @@ Prepare a deterministic demo rather than relying on an uncontrolled live setup.
 Suggested sequence:
 
 ```text
-1. Open VulnVista dashboard
-2. Show approved targets
-3. Start a selected scan
-4. Show scan progress/status
-5. Show several detected vulnerabilities
-6. Open one finding
-7. Explain evidence and confidence
-8. Show CWE/CVE/CVSS data where applicable
-9. Change remediation status
-10. Show scan history/comparison
-11. Export report
-12. Briefly show CI/CD and Docker deployment
+1. Log in to VulnVista
+2. Open VulnVista dashboard
+3. Show approved targets
+4. Start a selected scan
+5. Show scan progress/status
+6. Show several detected vulnerabilities
+7. Open one finding
+8. Explain evidence and confidence
+9. Show CWE/CVE/CVSS data where applicable
+10. Change remediation status
+11. Show scan history/comparison
+12. Export report
+13. Briefly show CI/CD and Docker deployment
 ```
 
 It is not necessary to run all fifteen detectors live during a short presentation. All fifteen should be demonstrable and have recorded validation results.
@@ -1218,9 +1345,9 @@ It is not necessary to run all fifteen detectors live during a short presentatio
 
 - [ ] Problem.
 - [ ] Proposed solution.
-- [ ] Architecture.
+- [ ] Architecture (including login/auth).
 - [ ] Detection engine.
-- [ ] 15 vulnerabilities.
+- [ ] 15 vulnerabilities and their owners.
 - [ ] Validation approach.
 - [ ] Dashboard.
 - [ ] Results.
@@ -1235,7 +1362,7 @@ It is not necessary to run all fifteen detectors live during a short presentatio
 
 The team submits:
 
-- working VulnVista prototype
+- working VulnVista prototype (with login/auth)
 - all fifteen detector modules
 - source code
 - container configuration
@@ -1250,56 +1377,49 @@ The team submits:
 
 # 12. Complete Milestone Register
 
-| Milestone | Target | Expected Outcome |
-|---|---|---|
-| M1 | End Week 1 | Scope, architecture and laboratory foundation |
-| V1 | Week 2 | SQL injection detector |
-| V2 | Week 2 | Command injection detector |
-| V3 | Week 2 | XSS detector |
-| M2 | End Week 2 | Core framework + first 3 detectors |
-| V4 | Week 3 | Unrestricted file-upload detector |
-| V5 | Week 3 | Path traversal/file inclusion detector |
-| V6 | Week 3 | CSRF detector |
-| V7 | Week 3 | IDOR/broken access-control detector |
-| M3A | End Week 3 | Seven integrated detectors |
-| V8 | Week 4 | Authentication/session/JWT detector |
-| V9 | Week 4 | Weak-authentication detector |
-| V10 | Week 4 | SSRF detector |
-| V11 | Week 4 | XXE detector |
-| M3 | End Week 4 | Eleven integrated detectors + dashboard MVP |
-| V12 | Week 5 | Sensitive-file exposure detector |
-| V13 | Week 5 | Known vulnerable-service detector |
-| V14 | Week 5 | Security-misconfiguration detector |
-| V15 | Week 5 | Weak-TLS detector |
-| M4 | End Week 5 | All 15 detectors + platform MVP |
-| M5A | End Week 6 | Complete integrated/containerised system |
-| M5 | End Week 7 | Validated release candidate |
-| M6 | End Week 8 | Final prototype, report and presentation |
+| Milestone | Target | Owners (parallel) | Expected Outcome |
+|---|---|---|---|
+| M1 | End Week 1 | All | Scope, architecture, lab foundation + auth scaffold |
+| V1 | Week 2 | Sparsh | SQL injection detector |
+| V2 | Week 2 | Sunil | Command injection detector |
+| V3 | Week 2 | Nischal | File-upload detector |
+| M2 | End Week 2 | All | Auth complete + core framework + first 3 detectors (3/15) |
+| V4 | Week 3 | Sparsh | XSS detector |
+| V5 | Week 3 | Sunil | Weak-authentication detector |
+| V6 | Week 3 | Nischal | JWT/session detector |
+| M2B | End Week 3 | All | Six integrated detectors (6/15) |
+| V7 | Week 4 | Sparsh | IDOR/broken access-control detector |
+| V8 | Week 4 | Sunil | Sensitive-file exposure detector |
+| V9 | Week 4 | Nischal | Path traversal detector |
+| M3A | End Week 4 | All | Nine integrated detectors + dashboard MVP (9/15) |
+| V10 | Week 5 | Sparsh | SSRF detector |
+| V11 | Week 5 | Sunil | Known vulnerable-service detector |
+| V12 | Week 5 | Nischal | CSRF detector |
+| M3 | End Week 5 | All | Twelve integrated detectors + full dashboard (12/15) |
+| V13 | Week 6 | Sparsh | XXE detector |
+| V14 | Week 6 | Sunil | Weak-TLS detector |
+| V15 | Week 6 | Nischal | Security-misconfiguration detector |
+| M4/M5A | End Week 6 | All | All 15 detectors + integrated/containerised system (15/15) |
+| M5 | End Week 7 | All | Validated release candidate |
+| M6 | End Week 8 | All | Final prototype, report and presentation |
 
 ---
 
 # 13. Milestone Dependency Flow
 
 ```text
-M1 Foundation
+M1 Foundation (+ Auth/Login)
  |
  +--> Detector Interface
  |       |
- |       +--> V1 SQL Injection
- |       +--> V2 Command Injection
- |       +--> V3 XSS
- |       +--> V4 File Upload
- |       +--> V5 Path Traversal
- |       +--> V6 CSRF
- |       +--> V7 IDOR
- |       +--> V8 JWT/Session
- |       +--> V9 Weak Authentication
- |       +--> V10 SSRF
- |       +--> V11 XXE
- |       +--> V12 Sensitive Files
- |       +--> V13 Vulnerable Services
- |       +--> V14 Misconfiguration
- |       +--> V15 Weak TLS
+ |       |   (each row below = one parallel week: Sparsh / Sunil / Nischal)
+ |       +--> Week 2: SQL Injection / Command Injection / File Upload
+ |       +--> Week 3: XSS / Weak Authentication / JWT-Session
+ |       +--> Week 4: IDOR / Sensitive Files / Path Traversal
+ |       +--> Week 5: SSRF / Vulnerable Services / CSRF
+ |       +--> Week 6: XXE / Weak TLS / Misconfiguration
+ |
+ +--> Auth / Login System
  |
  +--> Database
  |
@@ -1320,62 +1440,45 @@ M1 Foundation
 
 ---
 
-# 14. Suggested Parallel Team Workstreams
+# 14. Team Workstreams and Parallel Ownership
 
-The proposal identifies three main responsibility areas. Development should still use shared ownership where required.
+Every member owns five detectors (Section 2A) and, in each vulnerability week, works one detector in parallel with the other two. Platform work is layered on top and shared, with a lead area per member.
 
-## Workstream A — Cybersecurity / Detector Development
+## Detector Ownership
 
-Primary focus:
+- **Nischal:** File Upload, JWT/Session, Path Traversal, CSRF, Security Misconfiguration.
+- **Sparsh:** SQL Injection, XSS, IDOR, SSRF, XXE.
+- **Sunil:** Command Injection, Weak Authentication, Sensitive Files, Vulnerable Services, Weak TLS.
+
+## Suggested Platform Lead Areas
+
+These are leads, not silos — all three collaborate across areas.
+
+### Workstream A — Cybersecurity / Detector Development (all three)
 
 - laboratory target configuration
-- detector design
-- safe payloads/tests
-- evidence collection
-- validation rules
-- security classifications
-- detector testing
+- detector design and safe payloads/tests
+- evidence collection and validation rules
+- security classifications and detector testing
 
-## Workstream B — Backend / Cloud / CI/CD
+### Workstream B — Backend / Auth / Cloud / CI-CD
 
-Primary focus:
+- FastAPI, SQLAlchemy, PostgreSQL
+- **login/authentication and access control**
+- scanner orchestration, API
+- Docker, automated tests, CI/CD, deployment
 
-- FastAPI
-- SQLAlchemy
-- PostgreSQL
-- scanner orchestration
-- API
-- Docker
-- automated tests
-- CI/CD
-- deployment
-
-## Workstream C — Frontend / Data Visualisation
-
-Primary focus:
+### Workstream C — Frontend / Data Visualisation
 
 - React/TypeScript
-- dashboard
-- scan status
-- findings table
-- charts
-- finding detail
-- evidence presentation
-- scan history
-- remediation workflow
-- reporting presentation
+- login page and protected routes
+- dashboard, scan status, findings table, charts
+- finding detail, evidence presentation, scan history
+- remediation workflow, reporting presentation
 
 ## Shared Responsibilities
 
-All team members should participate in:
-
-- architecture decisions
-- integration
-- validation
-- documentation
-- report writing
-- presentation
-- live demonstration
+All team members participate in: architecture decisions, integration, validation, documentation, report writing, presentation, and the live demonstration.
 
 ---
 
@@ -1397,6 +1500,11 @@ Potential core API groups:
 Example operations:
 
 ```text
+POST   /auth/login
+POST   /auth/logout
+GET    /auth/me
+POST   /auth/users            (admin only)
+
 POST   /targets
 GET    /targets
 GET    /targets/{id}
@@ -1419,11 +1527,19 @@ GET    /dashboard/categories
 POST   /reports/{scan_id}
 ```
 
-The final endpoint design can be adapted during development.
+All non-public endpoints require a valid authentication token. The final endpoint design can be adapted during development.
 
 ---
 
 # 16. Dashboard Implementation Checklist
+
+## Login / Access
+
+- [ ] Login page.
+- [ ] Token storage/refresh handling.
+- [ ] Protected-route wrapper.
+- [ ] Role-based UI (hide privileged actions from viewers).
+- [ ] Logout.
 
 ## Main Dashboard
 
@@ -1507,6 +1623,15 @@ Test:
 - TLS parsing
 - service-version parsing
 - finding creation
+- **password hashing and platform token verification**
+
+## Auth Tests
+
+- valid login returns a token
+- invalid credentials are rejected
+- expired/invalid token is rejected
+- role-restricted endpoints deny lower roles
+- protected routes reject anonymous requests
 
 ## Detector Tests
 
@@ -1521,7 +1646,7 @@ Each detector should have:
 
 Test:
 
-- target creation
+- authenticated target creation
 - target rejection
 - scan creation
 - findings retrieval
@@ -1534,6 +1659,8 @@ Test:
 Test:
 
 ```text
+Login
+  ↓
 Target
   ↓
 Scan API
@@ -1560,6 +1687,8 @@ Every confirmed detector must also have documented manual reproduction during ev
 - [ ] Only intentionally vulnerable or team-owned targets.
 - [ ] Private laboratory network.
 - [ ] Target allowlisting.
+- [ ] Platform protected by authentication/login.
+- [ ] Passwords stored hashed; no plaintext secrets.
 - [ ] No arbitrary public target scanning.
 - [ ] Synthetic user information only.
 - [ ] Synthetic credentials.
@@ -1575,7 +1704,7 @@ Every confirmed detector must also have documented manual reproduction during ev
 - [ ] No real-user password cracking.
 - [ ] Request-rate controls.
 - [ ] Timeout controls.
-- [ ] Scan audit logging.
+- [ ] Scan audit logging (records authenticated initiator).
 - [ ] Secrets excluded from Git.
 - [ ] Final demo stays inside contained environment.
 
@@ -1585,31 +1714,31 @@ Every confirmed detector must also have documented manual reproduction during ev
 
 ## End of Week 2
 
-If the shared detector framework is unstable:
+If the shared detector framework or auth is unstable:
 
-**Stop adding new detector complexity and fix the common interface first.**
+**Stop adding new detector complexity and stabilise the common interface and login first.**
 
 ## End of Week 3
 
-If seven detectors are not integrated:
+If six detectors are not integrated:
 
-**Simplify evidence/UI features temporarily and prioritise detector completion.**
+**Simplify evidence/UI features temporarily and prioritise detector completion — each member protects their own weekly detector.**
 
 ## End of Week 4
 
-If fewer than eleven detectors work:
+If fewer than nine detectors work:
 
-**Allocate additional team capacity to detector implementation.**
+**Re-balance: any member ahead helps a member who is behind, without breaking the one-detector-per-person-per-week rhythm where possible.**
 
 ## End of Week 5
 
-**Feature freeze.**
+If fewer than twelve detectors work:
 
-All fifteen detectors should exist. No unnecessary major features should be introduced after this point.
+**Allocate additional shared capacity to detector completion before starting Week 6 integration.**
 
-## Week 6
+## End of Week 6
 
-Integration and deployment.
+**Feature freeze.** All fifteen detectors and the login system should exist. No unnecessary major features after this point.
 
 ## Week 7
 
@@ -1629,23 +1758,25 @@ The project is complete when:
 - [ ] OWASP Juice Shop is available.
 - [ ] Metasploitable 2 is available.
 - [ ] Local TLS test service is available.
+- [ ] Login/authentication protects the platform.
+- [ ] Role-based access control works.
 - [ ] Target allowlisting works.
 - [ ] Scan management works.
-- [ ] SQL injection detector works.
-- [ ] Command injection detector works.
-- [ ] XSS detector works.
-- [ ] Unrestricted file-upload detector works.
-- [ ] IDOR detector works.
-- [ ] Authentication/session/JWT detector works.
-- [ ] Path traversal detector works.
-- [ ] CSRF detector works.
-- [ ] Known vulnerable-services detector works.
-- [ ] Security-misconfiguration detector works.
-- [ ] SSRF detector works.
-- [ ] XXE detector works.
-- [ ] Sensitive-file exposure detector works.
-- [ ] Weak-authentication detector works.
-- [ ] Weak-TLS detector works.
+- [ ] SQL injection detector works. *(Sparsh)*
+- [ ] Command injection detector works. *(Sunil)*
+- [ ] File-upload detector works. *(Nischal)*
+- [ ] XSS detector works. *(Sparsh)*
+- [ ] Weak-authentication detector works. *(Sunil)*
+- [ ] JWT/session detector works. *(Nischal)*
+- [ ] IDOR detector works. *(Sparsh)*
+- [ ] Sensitive-file exposure detector works. *(Sunil)*
+- [ ] Path traversal detector works. *(Nischal)*
+- [ ] SSRF detector works. *(Sparsh)*
+- [ ] Known vulnerable-services detector works. *(Sunil)*
+- [ ] CSRF detector works. *(Nischal)*
+- [ ] XXE detector works. *(Sparsh)*
+- [ ] Weak-TLS detector works. *(Sunil)*
+- [ ] Security-misconfiguration detector works. *(Nischal)*
 - [ ] All detector outputs use a common schema.
 - [ ] Findings are stored in PostgreSQL.
 - [ ] Evidence is retained.
@@ -1715,74 +1846,60 @@ When time becomes constrained, use this order:
 
 ```text
 1. Safe laboratory
-2. Shared detector interface
-3. Database schema
-4. SQL injection
-5. Command injection
-6. XSS
-7. File upload
-8. IDOR
-9. Path traversal
-10. CSRF
-11. JWT/session
-12. Weak authentication
-13. SSRF
-14. XXE
-15. Sensitive files
-16. Vulnerable services
-17. Misconfiguration
-18. Weak TLS
-19. Backend integration
-20. Dashboard
-21. History/remediation
-22. Reporting
-23. Docker/CI-CD
-24. Validation
-25. Documentation/demo
+2. Login / authentication system
+3. Shared detector interface
+4. Database schema
+5. Week 2 trio: SQL Injection, Command Injection, File Upload
+6. Week 3 trio: XSS, Weak Authentication, JWT/Session
+7. Week 4 trio: IDOR, Sensitive Files, Path Traversal
+8. Week 5 trio: SSRF, Vulnerable Services, CSRF
+9. Week 6 trio: XXE, Weak TLS, Misconfiguration
+10. Backend integration
+11. Dashboard
+12. History/remediation
+13. Reporting
+14. Docker/CI-CD
+15. Validation
+16. Documentation/demo
 ```
 
-The core academic value should remain **repeatable detection + explicit validation + structured evidence**, rather than adding many secondary features that cannot be tested properly within eight weeks.
+Within each trio, Sparsh, Sunil, and Nischal each protect their assigned detector so no single detector is dropped. The core academic value should remain **repeatable detection + explicit validation + structured evidence**, rather than adding many secondary features that cannot be tested properly within eight weeks.
 
 ---
 
 # 23. Weekly Completion Summary
 
 ## Week 1
-**Foundation complete**
+**Foundation + auth scaffold complete**
 
-## Week 2
-**3/15 vulnerabilities complete**
+## Week 2 — 3/15
+- Sparsh: SQL Injection
+- Sunil: Command Injection
+- Nischal: File Upload
+- *(Platform login/auth completed)*
 
-- SQL Injection
-- Command Injection
-- XSS
+## Week 3 — 6/15
+- Sparsh: XSS
+- Sunil: Weak Authentication
+- Nischal: JWT / Session Security
 
-## Week 3
-**7/15 vulnerabilities complete**
+## Week 4 — 9/15
+- Sparsh: IDOR
+- Sunil: Sensitive Files
+- Nischal: Path Traversal
+- *(Dashboard MVP)*
 
-- + File Upload
-- + Path Traversal
-- + CSRF
-- + IDOR
+## Week 5 — 12/15
+- Sparsh: SSRF
+- Sunil: Vulnerable Services
+- Nischal: CSRF
+- *(Full dashboard)*
 
-## Week 4
-**11/15 vulnerabilities complete**
-
-- + JWT/Session
-- + Weak Authentication
-- + SSRF
-- + XXE
-
-## Week 5
-**15/15 vulnerabilities complete**
-
-- + Sensitive Files
-- + Known Vulnerable Services
-- + Security Misconfiguration
-- + Weak TLS
-
-## Week 6
-**End-to-end platform complete**
+## Week 6 — 15/15
+- Sparsh: XXE
+- Sunil: Weak TLS
+- Nischal: Security Misconfiguration
+- *(Integration, reporting, Docker, CI/CD)*
 
 ## Week 7
 **Validated release candidate**
@@ -1797,6 +1914,8 @@ The core academic value should remain **repeatable detection + explicit validati
 At the end of Week 8, VulnVista should demonstrate the following complete lifecycle:
 
 ```text
+Login (Authenticated User)
+      ↓
 Approved Target
       ↓
 Select Vulnerability Modules

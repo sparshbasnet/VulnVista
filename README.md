@@ -58,8 +58,8 @@ flowchart TD
 | --- | --- | --- |
 | DVWA | Adjustable-difficulty vulnerability exercises | [lab/docker-compose.yml](lab/docker-compose.yml) |
 | OWASP Juice Shop | Modern Node.js app covering the OWASP Top 10 | [lab/docker-compose.yml](lab/docker-compose.yml) |
-| Metasploitable2 | Known-vulnerable service catalogue | [lab/METASPLOITABLE.md](lab/METASPLOITABLE.md) (VM — no official Docker image) |
-| Local TLS test service | Weak TLS/certificate scenarios | Planned; see implementation plan §8, Week 1 |
+| Metasploitable2 | Known-vulnerable service catalogue | [lab/docker-compose.yml](lab/docker-compose.yml) (community image; VM alternative in [lab/METASPLOITABLE.md](lab/METASPLOITABLE.md)) |
+| Local TLS test service | Weak TLS/certificate scenarios | [lab/tls-test/](lab/tls-test/) via [lab/docker-compose.yml](lab/docker-compose.yml) |
 
 All targets run on an isolated `vulnvista_net` Docker network with no route to production infrastructure. See [lab/README.md](lab/README.md) for URLs, default credentials, and safety controls.
 
@@ -174,6 +174,10 @@ architecture and roadmap.
 
 ### First run
 
+Before the first start, set a strong `SECRET_KEY` and the three `INITIAL_ADMIN_*`
+values in `.env`. The backend creates that admin account once; subsequent starts do
+not overwrite it.
+
 ```bash
 ./scripts/setup.sh        # creates ./storage, copies .env.example -> .env, creates the shared network
 docker compose up --build # starts postgres + backend + frontend
@@ -181,6 +185,11 @@ docker compose up --build # starts postgres + backend + frontend
 
 - Backend API: <http://localhost:8000/api/health>
 - Frontend dashboard: <http://localhost:5173>
+
+Sign in with `INITIAL_ADMIN_USERNAME` (or `INITIAL_ADMIN_EMAIL`) and
+`INITIAL_ADMIN_PASSWORD`. Admins can create platform users through
+`POST /api/auth/users`; analysts can create targets and scans, while viewers have
+read-only access.
 
 ### Persistent data
 

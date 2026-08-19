@@ -6,8 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
-from app.database.session import engine
-from app.models.base import Base
+from app.database.session import AsyncSessionLocal, engine
+from app.models import Base
+from app.services.user_seed import seed_initial_admin
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -19,6 +20,8 @@ async def lifespan(_: FastAPI):
     # Formal schema changes should go through Alembic migrations (backend/alembic).
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    async with AsyncSessionLocal() as db:
+        await seed_initial_admin(db)
     yield
 
 

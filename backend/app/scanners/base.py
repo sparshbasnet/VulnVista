@@ -28,6 +28,8 @@ class DetectorResult:
     confidence: str
     endpoint: str | None = None
     parameter: str | None = None
+    description: str | None = None
+    evidence_summary: str | None = None
     evidence: dict[str, Any] = field(default_factory=dict)
     remediation: str | None = None
     cwe: str | None = None
@@ -71,8 +73,10 @@ class BaseDetector(ABC):
             "severity": result.severity,
             "confidence": result.confidence,
             "validation_status": result.validation_status,
+            "description": result.description,
             "affected_endpoint": result.endpoint,
             "parameter": result.parameter,
+            "evidence_summary": result.evidence_summary,
             "remediation": result.remediation,
             "cwe": result.cwe,
             "cve": result.cve,

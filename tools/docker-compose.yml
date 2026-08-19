@@ -1,0 +1,44 @@
+# VulnVista lab tools — supporting/attacker tooling (OWASP ZAP, etc.) used
+# against the deliberately vulnerable applications defined in
+# ../docker-compose.yml. This file should only ever be run against
+# VulnVista's own targets.
+#
+# Both this file and ../docker-compose.yml attach to the shared `vulnvista_net`
+# network as `external: true` — neither one creates it, to avoid the two
+# compose projects fighting over ownership of the same network. Run
+# ../scripts/setup.sh (or `docker network create vulnvista_net`) once before
+# starting either compose file.
+#
+# Usage (run from the repo root so the shared .env is picked up):
+#   docker compose --env-file .env -f tools/docker-compose.yml up -d
+#   docker compose --env-file .env -f tools/docker-compose.yml down
+
+services:
+  zap:
+    image: ghcr.io/zaproxy/zaproxy:stable
+    container_name: vulnvista_zap
+    command: >
+      zap.sh -daemon
+      -host 0.0.0.0
+      -port 8080
+      -config api.addrs.addr.name=.*
+      -config api.addrs.addr.regex=true
+      -config api.key=${ZAP_API_KEY:-vulnvista-dev-key}
+      -config api.disablekey=false
+      -config network.localServers.mainProxy.behindNat=false
+    ports:
+      - "8080:8080"
+    networks:
+      - vulnvista_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -f -H 'X-ZAP-API-Key: ${ZAP_API_KEY:-vulnvista-dev-key}' http://localhost:8080/JSON/core/view/version/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  vulnvista_net:
+    name: vulnvista_net
+    external: true
