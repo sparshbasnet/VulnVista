@@ -22,6 +22,7 @@ class ScanRead(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     duration_seconds: float | None
+    pages_scanned: int
     initiated_by: str | None
     error_summary: str | None
     created_at: datetime

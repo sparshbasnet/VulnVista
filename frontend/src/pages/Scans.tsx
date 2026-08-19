@@ -19,6 +19,7 @@ export default function Scans() {
               <th className="px-4 py-2">Status</th>
               <th className="px-4 py-2">Profile</th>
               <th className="px-4 py-2">Started</th>
+              <th className="px-4 py-2">Pages</th>
               <th className="px-4 py-2">Duration</th>
             </tr>
           </thead>
@@ -28,14 +29,15 @@ export default function Scans() {
                 <td className="px-4 py-2">{s.status}</td>
                 <td className="px-4 py-2">{s.scan_profile}</td>
                 <td className="px-4 py-2 text-slate-400">{s.started_at ?? "—"}</td>
+                <td className="px-4 py-2 text-slate-400">{s.pages_scanned}</td>
                 <td className="px-4 py-2 text-slate-400">
-                  {s.duration_seconds ? `${s.duration_seconds.toFixed(1)}s` : "—"}
+                  {s.duration_seconds !== null ? `${s.duration_seconds.toFixed(1)}s` : "—"}
                 </td>
               </tr>
             ))}
             {scans.length === 0 && (
               <tr>
-                <td className="px-4 py-6 text-center text-slate-500" colSpan={4}>
+                <td className="px-4 py-6 text-center text-slate-500" colSpan={5}>
                   No scans yet.
                 </td>
               </tr>

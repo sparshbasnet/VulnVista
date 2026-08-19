@@ -52,12 +52,16 @@ class BaseDetector(ABC):
         """Optional secondary validation pass; defaults to a no-op."""
         return result
 
+    async def check_all(self, context: ScanContext) -> list[DetectorResult]:
+        """Run every safe check for a target; detectors normally return one result."""
+        return [await self.check(context)]
+
     def build_finding(
-    self,
-    scan_id: uuid.UUID,
-    target_id: uuid.UUID,
-    result: DetectorResult,
-) -> dict[str, Any]:
+        self,
+        scan_id: uuid.UUID,
+        target_id: uuid.UUID,
+        result: DetectorResult,
+    ) -> dict[str, Any]:
         """Map a DetectorResult onto the shared Finding schema."""
         return {
             "scan_id": scan_id,

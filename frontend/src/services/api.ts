@@ -18,6 +18,7 @@ export const api = {
   listTargets: () => request<Target[]>("/targets"),
   createTarget: (payload: Partial<Target>) =>
     request<Target>("/targets", { method: "POST", body: JSON.stringify(payload) }),
+  allowTarget: (targetId: string) => request<Target>(`/targets/${targetId}/allow`, { method: "PATCH" }),
   listScans: () => request<Scan[]>("/scans"),
   createScan: (payload: { target_id: string; scan_profile?: string }) =>
     request<Scan>("/scans", { method: "POST", body: JSON.stringify(payload) }),

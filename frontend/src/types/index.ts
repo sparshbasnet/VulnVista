@@ -24,6 +24,7 @@ export interface Scan {
   started_at: string | null;
   completed_at: string | null;
   duration_seconds: number | null;
+  pages_scanned: number;
   initiated_by: string | null;
   error_summary: string | null;
   created_at: string;

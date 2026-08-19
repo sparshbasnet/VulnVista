@@ -43,7 +43,7 @@ async def create_scan(
     await db.commit()
     await db.refresh(scan)
 
-    detectors = get_detectors()
+    detectors = get_detectors(target.base_url)
 
     await run_scan(
         db=db,
@@ -53,6 +53,7 @@ async def create_scan(
     )
 
     return scan
+
 
 @router.get("", response_model=list[ScanRead])
 async def list_scans(db: AsyncSession = Depends(get_db)) -> list[Scan]:

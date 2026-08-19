@@ -24,52 +24,56 @@ async def run_scan(
 
     try:
         context = ScanContext(
-    target_id=str(target.id),
-    base_url=target.base_url or "",
-    extra={
-        "headers": {
-            "Host": "localhost",
-        }
-    } if "vulnvista_dvwa" in (target.base_url or "") else {},
-)
+            target_id=str(target.id),
+            base_url=target.base_url or "",
+            extra={
+                "headers": {
+                    "Host": "localhost",
+                }
+            }
+            if "vulnvista_dvwa" in (target.base_url or "")
+            else {},
+        )
 
         failed_detectors = 0
+        pages_scanned = 0
 
         for detector in detectors:
             try:
-                # Run the detector.
-                result = await detector.check(context)
-
-                # Optional secondary validation.
-                result = await detector.validate(result)
-
-                # Only create a finding when something was detected.
-                if result.detected:
-                    finding_data = detector.build_finding(
-                        scan_id=str(scan.id),
-                        target_id=str(target.id),
-                        result=result,
+                # A detector may return one result or one result per crawled page.
+                for result in await detector.check_all(context):
+                    pages_scanned = max(
+                        pages_scanned,
+                        int(result.evidence.get("pages_crawled", 0)),
                     )
+                    # Optional secondary validation.
+                    result = await detector.validate(result)
 
-                    finding = Finding(**finding_data)
-                    db.add(finding)
-
-                    # Store the detector evidence separately.
-                    if result.evidence:
-                        evidence = Evidence(
-                            finding=finding,
-                            evidence_type="detector",
-                            content=result.evidence,
+                    # Only create a finding when something was detected.
+                    if result.detected:
+                        finding_data = detector.build_finding(
+                            scan_id=str(scan.id),
+                            target_id=str(target.id),
+                            result=result,
                         )
-                        db.add(evidence)
+
+                        finding = Finding(**finding_data)
+                        db.add(finding)
+
+                        # Store the detector evidence separately.
+                        if result.evidence:
+                            evidence = Evidence(
+                                finding=finding,
+                                evidence_type="detector",
+                                content=result.evidence,
+                            )
+                            db.add(evidence)
 
             except Exception as exc:
                 failed_detectors += 1
 
                 # Keep the scan running even if one detector fails.
-                print(
-                    f"Detector '{detector.detector_id}' failed: {exc}"
-                )
+                print(f"Detector '{detector.detector_id}' failed: {exc}")
 
         if failed_detectors == 0:
             scan.status = ScanStatus.COMPLETED
@@ -79,11 +83,10 @@ async def run_scan(
             scan.status = ScanStatus.FAILED
 
         scan.completed_at = datetime.now(UTC)
+        scan.pages_scanned = pages_scanned
 
         if scan.started_at:
-            scan.duration_seconds = (
-                scan.completed_at - scan.started_at
-            ).total_seconds()
+            scan.duration_seconds = (scan.completed_at - scan.started_at).total_seconds()
 
         await db.commit()
         await db.refresh(scan)
