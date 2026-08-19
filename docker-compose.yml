@@ -45,17 +45,24 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       SECRET_KEY: ${SECRET_KEY:-change-me-generate-a-random-64-char-value}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:5173}
       BACKEND_STORAGE_DIR: /data/uploads
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vulnvista}:${POSTGRES_PASSWORD:-change-me-in-dev}@postgres:5432/${POSTGRES_DB:-vulnvista}
+      NVD_API_KEY: ${NVD_API_KEY:-}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       # Live-reload source mount for development.
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
+      - ./backend/scripts:/app/scripts
       # Scan evidence / uploaded files persisted on the host, not in the container layer.
       - ${BACKEND_STORAGE_DIR:-./storage/uploads}:/data/uploads
+      
     networks:
       - vulnvista_net
 
@@ -76,6 +83,21 @@ services:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
       - ./frontend/vite.config.ts:/app/vite.config.ts
+    networks:
+      - vulnvista_net
+
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    # Required: without this, Compose puts pgadmin on the implicit `default`
+    # network while postgres is on vulnvista_net, and the `postgres` hostname
+    # fails to resolve ([Errno -3]) no matter which port you use.
     networks:
       - vulnvista_net
 
