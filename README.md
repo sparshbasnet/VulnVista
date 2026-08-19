@@ -13,12 +13,12 @@ Full per-vulnerability checklists live in the [implementation plan](VulnVista_IM
 
 | Milestone | Target | Outcome | Status |
 | --- | --- | --- | --- |
-| M1 | Week 1 | Scope, architecture, and lab foundation | 🟡 Monorepo, backend/frontend scaffolding, and Docker Compose done; lab targets and safety controls next |
-| V1–V3 + M2 | Week 2 | Core scan framework + SQL injection, command injection, XSS | ⬜ Not started |
+| M1 | Week 1 | Scope, architecture, and lab foundation | ✅ Monorepo, backend/frontend scaffolding, Docker Compose, and lab targets done |
+| V1–V3 + M2 | Week 2 | Core scan framework + SQL injection, command injection, XSS | 🟡 Scan framework, allowlisting, and command injection detector done; SQLi and XSS not started |
 | V4–V7 + M3A | Week 3 | + File upload, path traversal, CSRF, IDOR | ⬜ Not started |
-| V8–V11 + M3 | Week 4 | + JWT/session, weak auth, SSRF, XXE; dashboard MVP | ⬜ Not started |
-| V12–V15 + M4 | Week 5 | + Sensitive files, vulnerable services, misconfiguration, weak TLS — all 15 detectors, feature freeze | ⬜ Not started |
-| M5A | Week 6 | Full integration, reporting, CI/CD | ⬜ Not started |
+| V8–V11 + M3 | Week 4 | + JWT/session, weak auth, SSRF, XXE; dashboard MVP | 🟡 Weak auth detector, authentication/authorization, and dashboard MVP done; session/JWT, SSRF, XXE not started |
+| V12–V15 + M4 | Week 5 | + Sensitive files, vulnerable services, misconfiguration, weak TLS — all 15 detectors, feature freeze | 🟡 Sensitive files, vulnerable services, and weak TLS detectors done; misconfiguration not started (5/15 detectors overall) |
+| M5A | Week 6 | Full integration, reporting, CI/CD | 🟡 CI (lint/test/build) running; report export not started |
 | M5 | Week 7 | Validated release candidate | ⬜ Not started |
 | M6 | Week 8 | Final delivery, report, demonstration | ⬜ Not started |
 
@@ -67,14 +67,16 @@ All targets run on an isolated `vulnvista_net` Docker network with no route to p
 
 | # | Category | # | Category |
 | --- | --- | --- | --- |
-| 1 | SQL Injection | 9 | Weak Authentication Controls |
-| 2 | Command Injection | 10 | Server-Side Request Forgery (SSRF) |
+| 1 | SQL Injection | 9 | ✅ Weak Authentication Controls |
+| 2 | ✅ Command Injection | 10 | Server-Side Request Forgery (SSRF) |
 | 3 | Cross-Site Scripting (XSS) | 11 | XML External Entity (XXE) |
-| 4 | Unrestricted File Upload | 12 | Sensitive-File Exposure |
-| 5 | Path Traversal / File Inclusion | 13 | Known Vulnerable Services |
+| 4 | Unrestricted File Upload | 12 | ✅ Sensitive-File Exposure |
+| 5 | Path Traversal / File Inclusion | 13 | ✅ Known Vulnerable Services |
 | 6 | Cross-Site Request Forgery (CSRF) | 14 | Security Misconfiguration |
-| 7 | Broken Access Control / IDOR | 15 | Weak TLS Configuration |
+| 7 | Broken Access Control / IDOR | 15 | ✅ Weak TLS Configuration |
 | 8 | Authentication / Session / JWT Weaknesses | | |
+
+5 of 15 detectors are implemented (see `backend/app/scanners/`): command injection, weak authentication, sensitive-file exposure, known vulnerable services, and weak TLS configuration.
 
 Every detector implements the same `BaseDetector` contract (`backend/app/scanners/base.py`): a safe `check()`, an optional `validate()`, and a `build_finding()` that maps onto the shared schema below.
 
@@ -155,8 +157,8 @@ Full checklist: [implementation plan §20](VulnVista_IMPLEMENTATION_PLAN.md#20-f
 
 ## Project status
 
-**Current phase:** Week 1 — project foundation (monorepo, backend/frontend scaffolding, and Docker Compose persistence are in place; lab target deployment and the first detectors are next).
-**Overall progress:** M1 in progress, 0/15 detectors implemented.
+**Current phase:** Weeks 3–4 — core platform in place (auth/RBAC, target/scan/finding APIs, allowlisted scanning, dashboard MVP, CI) with detector coverage still filling in.
+**Overall progress:** M1 done; 5/15 detectors implemented (command injection, weak authentication, sensitive-file exposure, known vulnerable services, weak TLS).
 
 ## Monorepo quickstart
 
