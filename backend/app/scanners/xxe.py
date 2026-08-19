@@ -358,10 +358,9 @@ class XXEDetector(BaseDetector):
             owasp_category="A05:2021 - Security Misconfiguration",
         )
 
-##
+#
 # import json
 # import os
-
 # async def _main() -> None:
 #     """Run a manual XXE check against an authorized target."""
 #     target_url = os.getenv("XXE_TARGET_URL", "http://juice-shop:3000")

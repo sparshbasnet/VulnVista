@@ -15,6 +15,7 @@ from app.scanners.weak_auth import WeakAuthDetector
 from app.scanners.weak_tls import WeakTLSDetector
 from app.scanners.xss import XSSDetector
 from app.scanners.xxe import XXEDetector
+from app.scanners.idor import IDORDetector
 
 # detector_id -> singleton instance
 DETECTOR_REGISTRY: dict[str, BaseDetector] = {
@@ -28,6 +29,7 @@ DETECTOR_REGISTRY: dict[str, BaseDetector] = {
         WeakTLSDetector(),
         XSSDetector(),
         XXEDetector(),
+        IDORDetector(),
     )
 }
 
@@ -42,6 +44,7 @@ SCAN_PROFILES: dict[str, list[str]] = {
     "weak_tls": ["weak_tls"],
     "xss": ["xss"],
     "xxe": ["xxe"],
+    "idor": ["idor"],
 }
 
 
