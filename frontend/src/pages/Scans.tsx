@@ -471,7 +471,8 @@ export default function Scans() {
       }
       if (advLoginPath.trim()) scanConfig.login_path = advLoginPath.trim();
       if (advKnownUsername.trim()) scanConfig.known_username = advKnownUsername.trim();
-      if (profile === "sql_injection" && advUseZap) scanConfig.use_zap = true;
+      if ((profile === "sql_injection" || profile === "command_injection") && advUseZap)
+        scanConfig.use_zap = true;
       if (advCookie.trim()) scanConfig.cookies = parseCookieHeader(advCookie.trim());
       if (advParameter.trim()) scanConfig.parameter = advParameter.trim();
       if (advPath.trim()) {
@@ -789,7 +790,7 @@ export default function Scans() {
                       <input aria-label="Owner field path" type="text" value={advIdorOwnerMarker} onChange={(event) => setAdvIdorOwnerMarker(event.target.value)} placeholder="Owner field in response JSON (e.g. data.UserId)" className="vv-input sm:col-span-2" />
                     </>
                   )}
-                  {profile === "sql_injection" && (
+                  {(profile === "sql_injection" || profile === "command_injection") && (
                     <label className="flex items-start gap-3 sm:col-span-2">
                       <input
                         type="checkbox"
@@ -801,8 +802,9 @@ export default function Scans() {
                         <strong className="block text-[9px] uppercase tracking-wide text-[#171616]">
                           Cross-check with OWASP ZAP
                         </strong>
-                        Runs ZAP's active scanner against the same endpoint as a second opinion.
-                        Confidence rises when both agree; a disagreement is reported, not hidden.
+                        Runs ZAP's active scanner against the same endpoint as a second opinion
+                        (may take a minute or two longer). Confidence rises when both agree; a
+                        disagreement is reported, not hidden.
                         Requires the separate ZAP lab service (tools/docker-compose.yml) to be running —
                         skipped automatically if it isn't reachable.
                       </span>
