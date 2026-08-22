@@ -86,3 +86,69 @@ def test_profile_resolves_to_command_injection_detector() -> None:
 def test_unknown_profile_falls_back_to_default() -> None:
     detectors = get_detectors_for_profile("does-not-exist")
     assert [d.detector_id for d in detectors] == ["command_injection"]
+
+
+# --- Optional OWASP ZAP cross-check (opt-in via ScanContext.extra['use_zap']) ---
+
+from app.scanners.command_injection import (  # noqa: E402
+    _is_cmdi_alert,
+    combine_with_zap,
+)
+
+
+def test_is_cmdi_alert_matches_by_cwe() -> None:
+    assert _is_cmdi_alert({"alert": "Something", "cweid": "78"}) is True
+
+
+def test_is_cmdi_alert_matches_by_plugin_id() -> None:
+    assert _is_cmdi_alert({"alert": "Something", "pluginId": "90020"}) is True
+
+
+def test_is_cmdi_alert_matches_by_name() -> None:
+    assert _is_cmdi_alert({"alert": "Remote OS Command Injection"}) is True
+
+
+def test_is_cmdi_alert_ignores_unrelated() -> None:
+    assert _is_cmdi_alert({"alert": "SQL Injection", "cweid": "89"}) is False
+
+
+def test_combine_with_zap_unused_passes_manual_through() -> None:
+    assert combine_with_zap(
+        manual_detected=True, manual_confidence="MEDIUM",
+        zap_used=False, zap_reachable=False, zap_detected=False,
+    ) == (True, "CONFIRMED", "MEDIUM")
+
+
+def test_combine_with_zap_unreachable_passes_manual_through() -> None:
+    assert combine_with_zap(
+        manual_detected=False, manual_confidence="LOW",
+        zap_used=True, zap_reachable=False, zap_detected=False,
+    ) == (False, "NOT_DETECTED", "LOW")
+
+
+def test_combine_with_zap_both_agree_is_high_confidence() -> None:
+    assert combine_with_zap(
+        manual_detected=True, manual_confidence="MEDIUM",
+        zap_used=True, zap_reachable=True, zap_detected=True,
+    ) == (True, "CONFIRMED", "HIGH")
+
+
+def test_combine_with_zap_manual_only_keeps_manual_confidence() -> None:
+    assert combine_with_zap(
+        manual_detected=True, manual_confidence="HIGH",
+        zap_used=True, zap_reachable=True, zap_detected=False,
+    ) == (True, "CONFIRMED", "HIGH")
+
+
+def test_combine_with_zap_zap_only_is_medium_confidence() -> None:
+    assert combine_with_zap(
+        manual_detected=False, manual_confidence="LOW",
+        zap_used=True, zap_reachable=True, zap_detected=True,
+    ) == (True, "CONFIRMED", "MEDIUM")
+
+
+def test_combine_with_zap_neither_found_anything() -> None:
+    assert combine_with_zap(
+        manual_detected=False, manual_confidence="LOW",
+        zap_used=True, zap_reachable=True, zap_detected=False,
+    ) == (False, "NOT_DETECTED", "LOW")
