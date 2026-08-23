@@ -9,19 +9,29 @@ here.
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
 from app.scanners.command_injection import CommandInjectionDetector
 from app.scanners.sensitive_files import SensitiveFilesDetector
+from app.scanners.sqli_detector import SQLiDetector
 from app.scanners.vulnerable_services import VulnerableServicesDetector
 from app.scanners.weak_auth import WeakAuthDetector
 from app.scanners.weak_tls import WeakTLSDetector
+from app.scanners.xss import XSSDetector
+from app.scanners.xxe import XXEDetector
+from app.scanners.idor import IDORDetector
+from app.scanners.ssrf import SSRFDetector
 
 # detector_id -> singleton instance
 DETECTOR_REGISTRY: dict[str, BaseDetector] = {
     detector.detector_id: detector
     for detector in (
         CommandInjectionDetector(),
+        SQLiDetector(),
         WeakAuthDetector(),
         SensitiveFilesDetector(),
         VulnerableServicesDetector(),
         WeakTLSDetector(),
+        XSSDetector(),
+        XXEDetector(),
+        IDORDetector(),
+        SSRFDetector(),
     )
 }
 
@@ -29,10 +39,14 @@ DETECTOR_REGISTRY: dict[str, BaseDetector] = {
 SCAN_PROFILES: dict[str, list[str]] = {
     "default": ["command_injection"],
     "command_injection": ["command_injection"],
+    "sqli_detector": ["sqli_detector"],
     "weak_auth": ["weak_auth"],
     "sensitive_files": ["sensitive_files"],
     "vulnerable_services": ["vulnerable_services"],
     "weak_tls": ["weak_tls"],
+    "xss": ["xss"],
+    "xxe": ["xxe"],
+    "idor": ["idor"],
 }
 
 
