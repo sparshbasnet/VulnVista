@@ -16,6 +16,7 @@ from app.scanners.weak_tls import WeakTLSDetector
 from app.scanners.xss import XSSDetector
 from app.scanners.xxe import XXEDetector
 from app.scanners.idor import IDORDetector
+from app.scanners.ssrf import SSRFDetector
 
 # detector_id -> singleton instance
 DETECTOR_REGISTRY: dict[str, BaseDetector] = {
@@ -30,6 +31,7 @@ DETECTOR_REGISTRY: dict[str, BaseDetector] = {
         XSSDetector(),
         XXEDetector(),
         IDORDetector(),
+        SSRFDetector(),
     )
 }
 
