@@ -46,6 +46,7 @@ export const api = {
   listTargets: () => request<Target[]>("/targets"),
   createTarget: (payload: TargetCreatePayload) =>
     request<Target>("/targets", { method: "POST", body: JSON.stringify(payload) }),
+  allowTarget: (targetId: string) => request<Target>(`/targets/${targetId}/allow`, { method: "PATCH" }),
   listScans: () => request<Scan[]>("/scans"),
   getScan: (id: string) => request<Scan>(`/scans/${id}`),
   createScan: (payload: { target_id: string; scan_profile?: string }) =>

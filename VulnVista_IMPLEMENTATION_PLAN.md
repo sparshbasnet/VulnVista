@@ -510,14 +510,11 @@ class BaseDetector:
     supported_targets: list[str]
     owner: str  # Nischal / Sparsh / Sunil
 
-    async def check(self, context):
-        ...
+    async def check(self, context): ...
 
-    async def validate(self, result):
-        ...
+    async def validate(self, result): ...
 
-    def build_finding(self, result):
-        ...
+    def build_finding(self, result): ...
 ```
 
 A detector should return a common result structure.
@@ -532,7 +529,7 @@ A detector should return a common result structure.
   "confidence": "HIGH",
   "endpoint": "/vulnerabilities/sqli/",
   "parameter": "id",
-  "evidence": {},
+  "evidence": {},å
   "remediation": "...",
   "cwe": "CWE-89"
 }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -53,12 +54,17 @@ class BaseDetector(ABC):
         """Optional secondary validation pass; defaults to a no-op."""
         return result
 
-    def build_finding(self, scan_id: str, target_id: str, result: DetectorResult) -> dict[str, Any]:
-        """Map a DetectorResult onto the shared Finding schema (scalar columns only).
+    async def check_all(self, context: ScanContext) -> list[DetectorResult]:
+        """Run every safe check for a target; detectors normally return one result."""
+        return [await self.check(context)]
 
-        Evidence detail (payloads, timings, response snippets) is persisted
-        separately as Evidence rows by the scan runner.
-        """
+    def build_finding(
+        self,
+        scan_id: uuid.UUID,
+        target_id: uuid.UUID,
+        result: DetectorResult,
+    ) -> dict[str, Any]:
+        """Map a DetectorResult onto the shared Finding schema."""
         return {
             "scan_id": scan_id,
             "target_id": target_id,
