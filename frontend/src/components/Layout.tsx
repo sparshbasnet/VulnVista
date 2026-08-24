@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { useHealth } from "../hooks/useHealth";
 import { useAuth } from "../auth/useAuth";
 import { useAppData } from "../hooks/useAppData";
@@ -20,6 +20,7 @@ export default function Layout() {
     { to: "/targets", label: "Targets", end: false, count: targets.length },
     { to: "/evidence", label: "Evidence", end: false, count: evidenceCount },
     ...(user?.role === "ADMIN" ? [{ to: "/users", label: "Users", end: false, count: null }] : []),
+    { to: "/account", label: "Account", end: false, count: null },
   ];
 
   const apiTone =
@@ -94,8 +95,10 @@ export default function Layout() {
             API {health}
           </p>
           <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#d8d4cf] pt-3 text-[10px] font-semibold uppercase tracking-wider text-[#676360]">
-            <span>{user?.username} · {user?.role}</span>
-            <button type="button" onClick={() => void logout()} className="text-[#a61b0d] hover:underline">
+            <Link to="/account" className="min-w-0 truncate hover:text-[#171616] hover:underline">
+              {user?.username} · {user?.role}
+            </Link>
+            <button type="button" onClick={() => void logout()} className="shrink-0 text-[#a61b0d] hover:underline">
               Sign out
             </button>
           </div>

@@ -14,6 +14,11 @@ export interface User {
   is_active: boolean;
   last_login_at: string | null;
   created_at: string;
+  /** On an administrator-issued temporary password; every other route is blocked. */
+  must_change_password: boolean;
+  /** Set while the account is locked out after repeated failed logins. */
+  locked_until: string | null;
+  password_changed_at: string | null;
 }
 
 export interface UserCreatePayload {
@@ -21,6 +26,24 @@ export interface UserCreatePayload {
   email: string;
   password: string;
   role: UserRole;
+}
+
+export interface UserUpdatePayload {
+  role?: UserRole;
+  is_active?: boolean;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  must_change_password: boolean;
+}
+
+export interface PasswordResetIssued {
+  user_id: string;
+  username: string;
+  reset_token: string;
+  expires_at: string;
 }
 
 export interface Target {
