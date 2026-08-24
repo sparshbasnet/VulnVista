@@ -1,18 +1,50 @@
 import type {
   Finding,
   FindingStatus,
+  PasswordResetIssued,
   Scan,
   Target,
   TargetCreatePayload,
+  TokenResponse,
   User,
   UserCreatePayload,
+  UserUpdatePayload,
 } from "../types";
+import { UNAUTHORIZED_EVENT, clearToken, readToken } from "../auth/token";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:9000/api";
 
+// Reaching these without a session is normal, so a 401 from them is a failed
+// attempt rather than an expired session to sign the user out of.
+const PUBLIC_PATHS = new Set([
+  "/auth/login",
+  "/auth/password-reset/request",
+  "/auth/password-reset/confirm",
+]);
+
+/**
+ * FastAPI answers with a plain string for handled errors and a list of
+ * `{ loc, msg }` entries for 422 validation failures. Flatten both to something
+ * a form can put in front of the user.
+ */
+function describeError(detail: unknown): string | null {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((entry) =>
+        typeof entry === "object" && entry !== null && "msg" in entry
+          ? String((entry as { msg: unknown }).msg).replace(/^Value error, /, "")
+          : null,
+      )
+      .filter((message): message is string => Boolean(message));
+    if (messages.length > 0) return messages.join(" ");
+  }
+  return null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = sessionStorage.getItem("vulnvista_access_token");
+  const token = readToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
@@ -21,16 +53,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
   });
-  if (response.status === 401 && path !== "/auth/login") {
-    sessionStorage.removeItem("vulnvista_access_token");
-    window.dispatchEvent(new Event("vulnvista:unauthorized"));
+  if (response.status === 401 && !PUBLIC_PATHS.has(path)) {
+    clearToken();
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   }
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
-      detail?: string;
+      detail?: unknown;
     } | null;
     throw new Error(
-      body?.detail ??
+      describeError(body?.detail) ??
         `${init?.method ?? "GET"} ${path} failed: ${response.status}`,
     );
   }
@@ -41,16 +73,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<{ status: string; environment: string }>("/health"),
   login: (username: string, password: string) =>
-    request<{ access_token: string; token_type: string }>("/auth/login", {
+    request<TokenResponse>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
   me: () => request<User>("/auth/me"),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
+  changePassword: (current_password: string, new_password: string) =>
+    request<TokenResponse>("/auth/me/password", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    }),
+  requestPasswordReset: (identity: string) =>
+    request<{ detail: string }>("/auth/password-reset/request", {
+      method: "POST",
+      body: JSON.stringify({ identity }),
+    }),
+  confirmPasswordReset: (token: string, new_password: string) =>
+    request<void>("/auth/password-reset/confirm", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password }),
+    }),
+  listUsers: () => request<User[]>("/auth/users"),
   createUser: (payload: UserCreatePayload) =>
     request<User>("/auth/users", {
       method: "POST",
       body: JSON.stringify(payload),
+    }),
+  updateUser: (id: string, payload: UserUpdatePayload) =>
+    request<User>(`/auth/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  issuePasswordReset: (id: string) =>
+    request<PasswordResetIssued>(`/auth/users/${id}/password-reset`, {
+      method: "POST",
     }),
   listTargets: () => request<Target[]>("/targets"),
   createTarget: (payload: TargetCreatePayload) =>

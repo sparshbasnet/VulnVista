@@ -28,7 +28,9 @@ class FakeUserDb:
         return None
 
 
-def _user(*, user_id: uuid.UUID | None = None, active: bool = True) -> User:
+def _user(
+    *, user_id: uuid.UUID | None = None, active: bool = True, token_version: int = 1
+) -> User:
     return User(
         id=user_id or uuid.uuid4(),
         username="session.user",
@@ -36,6 +38,7 @@ def _user(*, user_id: uuid.UUID | None = None, active: bool = True) -> User:
         hashed_password="unused",
         role=UserRole.VIEWER,
         is_active=active,
+        token_version=token_version,
         created_at=datetime.now(UTC),
     )
 
@@ -142,3 +145,29 @@ async def test_current_user_rejects_inactive_user_session() -> None:
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.headers == {"WWW-Authenticate": "Bearer"}
+
+
+@pytest.mark.asyncio
+async def test_current_user_rejects_token_from_before_a_password_change() -> None:
+    # The user changed their password (or was deactivated and reinstated), which
+    # bumped token_version; tokens minted against the old version are dead.
+    user = _user(token_version=2)
+    stale_token = create_access_token(user.id, token_version=1)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user(credentials=_bearer(stale_token), db=FakeUserDb(user))  # type: ignore[arg-type]
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.headers == {"WWW-Authenticate": "Bearer"}
+
+
+@pytest.mark.asyncio
+async def test_current_user_accepts_a_token_at_the_current_version() -> None:
+    user = _user(token_version=7)
+
+    current = await get_current_user(
+        credentials=_bearer(create_access_token(user.id, token_version=7)),
+        db=FakeUserDb(user),  # type: ignore[arg-type]
+    )
+
+    assert current is user
