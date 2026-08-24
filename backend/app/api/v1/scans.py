@@ -11,7 +11,7 @@ from app.models.finding import Finding
 from app.models.scan import Scan
 from app.models.target import Target
 from app.models.user import User
-from app.scanners.detector_registry import get_detectors
+from app.scanners import get_detectors_for_profile
 from app.schemas.finding import FindingRead
 from app.schemas.scan import ScanCreate, ScanRead
 from app.services.scan_orchestrator import run_scan
@@ -51,7 +51,7 @@ async def create_scan(
     await db.commit()
     await db.refresh(scan)
 
-    detectors = get_detectors(target.base_url)
+    detectors = get_detectors_for_profile(payload.scan_profile)
 
     await run_scan(
         db=db,

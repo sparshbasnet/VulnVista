@@ -23,16 +23,16 @@ async def run_scan(
     scan.started_at = datetime.now(UTC)
 
     try:
+        scan_config = dict(target.scan_config or {})
+        if "vulnvista_dvwa" in (target.base_url or ""):
+            headers = dict(scan_config.get("headers", {}))
+            headers.setdefault("Host", "localhost")
+            scan_config["headers"] = headers
+
         context = ScanContext(
             target_id=str(target.id),
             base_url=target.base_url or "",
-            extra={
-                "headers": {
-                    "Host": "localhost",
-                }
-            }
-            if "vulnvista_dvwa" in (target.base_url or "")
-            else {},
+            extra=scan_config,
         )
 
         failed_detectors = 0

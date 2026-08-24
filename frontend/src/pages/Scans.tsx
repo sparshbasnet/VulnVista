@@ -22,9 +22,12 @@ interface Phase {
 }
 type ProfileId =
   | "command_injection"
+  | "csrf"
+  | "path_traversal"
   | "weak_auth"
   | "sensitive_files"
   | "vulnerable_services"
+  | "file_upload"
   | "weak_tls";
 interface ProfileConfig {
   label: string;
@@ -49,6 +52,28 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "or query parameter to probe, then confirms OS command injection with output-marker " +
       "and time-based signals. Use Advanced below for a login, a session cookie, or an exact " +
       "parameter to target. http://dvwa is a bundled lab target requiring no setup.",
+  },
+  csrf: {
+    label: "Cross-Site Request Forgery (CSRF)",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for CSRF controls",
+    scanningLabel: "Inspecting forms for CSRF protection…",
+    noFindingLabel: "No missing CSRF controls detected on this target",
+    help:
+      "Inspects the target’s HTML forms for common CSRF-token fields. The bundled DVWA lab " +
+      "is selected by default; use only an authorized target.",
+  },
+  path_traversal: {
+    label: "Path Traversal (DVWA / Juice Shop)",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for path traversal",
+    scanningLabel: "Probing the safe path-traversal check…",
+    noFindingLabel: "No path traversal detected on this target",
+    help:
+      "Uses a target-specific safe probe against the bundled DVWA or Juice Shop lab and " +
+      "records confirmed evidence only when the expected lab marker is returned.",
   },
   weak_auth: {
     label: "Weak Authentication (Juice Shop)",
@@ -88,6 +113,18 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "each service against known CVEs and insecure-by-design protocols (telnet, rsh/rlogin, " +
       "unauthenticated VNC). Only version fingerprints are used as proof — nothing is ever " +
       "exploited on the target. Can take a couple of minutes since it's a real port scan.",
+  },
+  file_upload: {
+    label: "Unrestricted File Upload (DVWA)",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Inspect file-upload controls",
+    scanningLabel: "Signing in and inspecting file-upload restrictions…",
+    noFindingLabel: "No unrestricted file-upload control detected on this target",
+    help:
+      "For the bundled DVWA lab, the scanner signs in with its seeded lab account and " +
+      "inspects the upload form for browser-visible type restrictions. It does not upload " +
+      "or execute a file. Use a session cookie in Advanced for another authorized app.",
   },
   weak_tls: {
     label: "Weak TLS Configuration",
@@ -612,41 +649,6 @@ export default function Scans() {
           </table>
         </div>
       </section>
-    <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Scans</h1>
-      <div className="overflow-hidden rounded-lg border border-slate-800">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-900 text-xs uppercase text-slate-400">
-            <tr>
-              <th className="px-4 py-2">Status</th>
-              <th className="px-4 py-2">Profile</th>
-              <th className="px-4 py-2">Started</th>
-              <th className="px-4 py-2">Pages</th>
-              <th className="px-4 py-2">Duration</th>
-            </tr>
-          </thead>
-          <tbody>
-            {scans.map((s) => (
-              <tr key={s.id} className="border-t border-slate-800">
-                <td className="px-4 py-2">{s.status}</td>
-                <td className="px-4 py-2">{s.scan_profile}</td>
-                <td className="px-4 py-2 text-slate-400">{s.started_at ?? "—"}</td>
-                <td className="px-4 py-2 text-slate-400">{s.pages_scanned}</td>
-                <td className="px-4 py-2 text-slate-400">
-                  {s.duration_seconds !== null ? `${s.duration_seconds.toFixed(1)}s` : "—"}
-                </td>
-              </tr>
-            ))}
-            {scans.length === 0 && (
-              <tr>
-                <td className="px-4 py-6 text-center text-slate-500" colSpan={5}>
-                  No scans yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }
