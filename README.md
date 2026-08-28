@@ -1,223 +1,282 @@
 # VulnVista
 
-> A controlled vulnerability-assessment platform for an isolated academic lab: a modular Python detection engine, FastAPI backend, PostgreSQL persistence, and a React/TypeScript dashboard covering fifteen vulnerability categories.
+VulnVista is a controlled vulnerability-assessment platform for an isolated academic laboratory. It combines purpose-built Python detectors, a FastAPI API, PostgreSQL persistence, and a React/TypeScript interface for registering approved targets, running scans, reviewing findings, and inspecting evidence.
 
-VulnVista detects, validates, stores, prioritises, and presents findings from intentionally vulnerable laboratory systems. It is being developed by **Group 7** for the **NIT6150 Advanced Project**. Unlike an orchestration layer around third-party scanners, each vulnerability category is checked by a purpose-built Python detector with its own safe test payload and validation logic — see [VulnVista_IMPLEMENTATION_PLAN.md](VulnVista_IMPLEMENTATION_PLAN.md) for the full eight-week roadmap and design detail.
+The project is being developed by **Group 7** for the **NIT6150 Advanced Project**. The longer-term design and academic roadmap are in [VulnVista_IMPLEMENTATION_PLAN.md](VulnVista_IMPLEMENTATION_PLAN.md).
 
 > [!CAUTION]
-> VulnVista is intended only for deliberately vulnerable applications in an isolated, pre-approved lab (DVWA, OWASP Juice Shop, Metasploitable2, a local TLS test service). Never use it to scan public, production, or third-party systems without explicit written authorization.
+> VulnVista must only be used against deliberately vulnerable systems or targets for which the operator has explicit authorization. Do not scan public, production, or third-party systems without written permission.
 
-## Milestone tracker
+## Current implementation status
 
-Full per-vulnerability checklists live in the [implementation plan](VulnVista_IMPLEMENTATION_PLAN.md#8-eight-week-implementation-roadmap). Summary:
+This table describes the code currently present in the project rather than the original project plan.
 
-| Milestone | Target | Outcome | Status |
-| --- | --- | --- | --- |
-| M1 | Week 1 | Scope, architecture, and lab foundation | 🟡 Monorepo, backend/frontend scaffolding, and Docker Compose done; lab targets and safety controls next |
-| V1–V3 + M2 | Week 2 | Core scan framework + SQL injection, command injection, XSS | ⬜ Not started |
-| V4–V7 + M3A | Week 3 | + File upload, path traversal, CSRF, IDOR | ⬜ Not started |
-| V8–V11 + M3 | Week 4 | + JWT/session, weak auth, SSRF, XXE; dashboard MVP | ⬜ Not started |
-| V12–V15 + M4 | Week 5 | + Sensitive files, vulnerable services, misconfiguration, weak TLS — all 15 detectors, feature freeze | ⬜ Not started |
-| M5A | Week 6 | Full integration, reporting, CI/CD | ⬜ Not started |
-| M5 | Week 7 | Validated release candidate | ⬜ Not started |
-| M6 | Week 8 | Final delivery, report, demonstration | ⬜ Not started |
-
-## What VulnVista does
-
-- Runs safe, repeatable detectors for fifteen vulnerability categories against approved lab targets only.
-- Validates every finding (`NOT_DETECTED` → `SUSPECTED`/`CONFIRMED`/`INCONCLUSIVE`/`ERROR`) instead of reporting raw signals.
-- Stores targets, scans, findings, and evidence in PostgreSQL behind a FastAPI backend.
-- Maps findings to CWE, CVE, CVSS, and OWASP Top 10 categories where applicable.
-- Presents severity, confidence, scan history, and remediation status on a React dashboard.
-- Exports HTML/PDF reports from the same data shown on the dashboard.
-- Isolates detector failures so one broken check never aborts a scan.
-
-## High-level architecture
-
-```mermaid
-flowchart TD
-    U["Authorised user"] --> TM["Target management"]
-    TM --> SEL["Select scan / vulnerability modules"]
-    SEL --> O["Scan orchestrator"]
-    O --> PD["Python vulnerability detectors"]
-    O --> TC["Service / TLS checks"]
-    PD --> V["Validation framework"]
-    TC --> V
-    V --> F["Structured finding"]
-    F --> DB["PostgreSQL"]
-    DB --> API["FastAPI backend"]
-    DB --> R["Reporting"]
-    API --> D["React/TypeScript dashboard"]
-    D --> RM["Finding review / remediation / re-scan"]
-    RM --> O
-```
-
-## Approved lab targets
-
-| Target | Role | Setup |
+| Area | Status | Current capability |
 | --- | --- | --- |
-| DVWA | Adjustable-difficulty vulnerability exercises | [lab/docker-compose.yml](lab/docker-compose.yml) |
-| OWASP Juice Shop | Modern Node.js app covering the OWASP Top 10 | [lab/docker-compose.yml](lab/docker-compose.yml) |
-| Metasploitable2 | Known-vulnerable service catalogue | [lab/docker-compose.yml](lab/docker-compose.yml) (community image; VM alternative in [lab/METASPLOITABLE.md](lab/METASPLOITABLE.md)) |
-| Local TLS test service | Weak TLS/certificate scenarios | [lab/tls-test/](lab/tls-test/) via [lab/docker-compose.yml](lab/docker-compose.yml) |
+| Target management | Implemented | Register and list targets, record authorization, approve bundled lab hosts, and block cloud metadata endpoints |
+| Scan orchestration | Implemented | Queue background scans, run a detector profile, isolate detector failures, and record status and duration |
+| Detector engine | In progress | Ten detector modules are registered; nine currently have API-selectable scan profiles |
+| Findings and evidence | Implemented | Persist reportable findings and detector evidence, filter findings, and update remediation status |
+| Frontend dashboard | Implemented | Security posture, severity distribution, scan outcomes, detector coverage, OWASP mapping, and highest-risk findings |
+| Targets, scans, and findings UI | Implemented/in integration | Create and browse targets and scans, inspect scan results, and review findings |
+| Authentication and roles | Integration in progress | Login, protected routes, and user-management code is being integrated; supporting auth modules must be completed before use |
+| Evidence workspace | Integration in progress | A dedicated evidence-review page is being integrated |
+| Report export | Planned | HTML/PDF export is not implemented yet |
 
-All targets run on an isolated `vulnvista_net` Docker network with no route to production infrastructure. See [lab/README.md](lab/README.md) for URLs, default credentials, and safety controls.
+## Features
 
-## Vulnerability categories
+### Security dashboard
 
-| # | Category | # | Category |
-| --- | --- | --- | --- |
-| 1 | SQL Injection | 9 | Weak Authentication Controls |
-| 2 | Command Injection | 10 | Server-Side Request Forgery (SSRF) |
-| 3 | Cross-Site Scripting (XSS) | 11 | XML External Entity (XXE) |
-| 4 | Unrestricted File Upload | 12 | Sensitive-File Exposure |
-| 5 | Path Traversal / File Inclusion | 13 | Known Vulnerable Services |
-| 6 | Cross-Site Request Forgery (CSRF) | 14 | Security Misconfiguration |
-| 7 | Broken Access Control / IDOR | 15 | Weak TLS Configuration |
-| 8 | Authentication / Session / JWT Weaknesses | | |
+The frontend index page presents a live overview using targets, scans, and findings returned by the API. It includes:
 
-Every detector implements the same `BaseDetector` contract (`backend/app/scanners/base.py`): a safe `check()`, an optional `validate()`, and a `build_finding()` that maps onto the shared schema below.
+- Total open findings and registered targets.
+- Open critical findings requiring immediate attention.
+- Confirmed and suspected validation results.
+- Scan completion rate and seven-day scan outcomes.
+- Open-finding distribution by severity.
+- Coverage across the planned detector catalogue.
+- Open findings grouped by OWASP category.
+- A prioritized list of the highest-risk open findings using severity and CVSS.
+- Links from summaries to detailed scans and findings.
+- Loading, API error, and retry states.
 
-## Implementation stack
+### Target management and safety controls
 
-| Layer | Technology |
-| --- | --- |
-| Backend | FastAPI, SQLAlchemy (async), Alembic, [uv](https://docs.astral.sh/uv/) |
-| Storage | PostgreSQL, bind-mounted to the host so data survives container restarts |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS v4, react-router |
-| Detection engine | Python, one module per vulnerability category under `backend/app/scanners/` |
-| Deployment | Docker Compose (root stack + separate `lab/` compose for vulnerable targets) |
-| CI/CD | GitHub Actions — backend lint/test, frontend lint/build, Docker image builds |
+Targets are stored with a name, type, URL or address, environment, optional scan configuration, and authorization state.
 
-## Shared finding schema
+- Bundled laboratory hostnames are automatically approved.
+- Other targets require an explicit authorization acknowledgement when registered.
+- Cloud metadata endpoints such as `169.254.169.254` are always blocked.
+- A scan cannot start unless its target is approved.
+- Approval is calculated by the backend and cannot be supplied directly by a client.
 
-Every detector result maps onto the same `Finding` model (`backend/app/models/finding.py`):
+The trusted and blocked hostname lists are configurable through `LAB_ALLOWED_HOSTS` and `BLOCKED_HOSTS`.
+
+### Scan lifecycle
+
+When a scan is created, the backend performs this workflow:
+
+1. Confirms that the target exists and is approved.
+2. Creates a scan with the `QUEUED` status.
+3. Starts the scan runner as a FastAPI background task.
+4. Changes the scan to `RUNNING` and resolves the selected profile.
+5. Executes each detector and validates its result.
+6. Persists `CONFIRMED`, `SUSPECTED`, and `INCONCLUSIVE` results as findings.
+7. Stores detector evidence in a separate record linked to the finding.
+8. Marks the scan `COMPLETED`, `PARTIAL`, or `FAILED` and records duration and errors.
+
+A detector exception is caught independently, so one faulty detector does not automatically terminate the rest of the scan.
+
+### Vulnerability detectors
+
+Each detector extends the common `BaseDetector` contract and supplies a `check()`, optional validation, and finding construction.
+
+| Detector | Profile key | Availability |
+| --- | --- | --- |
+| Command injection | `command_injection` | Selectable |
+| SQL injection | `sqli_detector` | Selectable |
+| Weak authentication | `weak_auth` | Selectable |
+| Sensitive-file exposure | `sensitive_files` | Selectable |
+| Known vulnerable services | `vulnerable_services` | Selectable |
+| Weak TLS configuration | `weak_tls` | Selectable |
+| Cross-site scripting | `xss` | Selectable |
+| XML external entity injection | `xxe` | Selectable |
+| Broken access control / IDOR | `idor` | Selectable |
+| Server-side request forgery | `ssrf` | Registered; scan-profile mapping still required |
+
+The remaining planned categories are unrestricted file upload, path traversal/file inclusion, CSRF, authentication/session/JWT weaknesses, and general security misconfiguration.
+
+### Findings and evidence
+
+Detector output is normalized into a shared finding structure:
 
 ```text
 id, scan_id, target_id, detector_id
 vulnerability_name, severity, confidence
-validation_status   # NOT_DETECTED | SUSPECTED | CONFIRMED | INCONCLUSIVE | ERROR
-finding_status       # OPEN | IN_PROGRESS | REMEDIATED | ACCEPTED_RISK | FALSE_POSITIVE
-description, affected_endpoint, parameter, evidence_summary, remediation
+validation_status, finding_status
+description, affected_endpoint, parameter
+evidence_summary, remediation
 cwe, cve, cvss_score, owasp_category
 created_at
 ```
 
-Evidence (HTTP request/response pairs, screenshots, TLS results, service banners, etc.) is stored separately per finding via the `Evidence` model, so a finding stays lightweight while still being fully reproducible.
+Validation status describes the technical conclusion:
 
-## Dashboard views
+- `NOT_DETECTED`
+- `SUSPECTED`
+- `CONFIRMED`
+- `INCONCLUSIVE`
+- `ERROR`
 
-- Severity, category, and target distribution.
-- Findings table with filtering by target, severity, confidence, and validation status.
-- Finding detail: evidence, CWE/CVE/CVSS/OWASP mapping, remediation guidance.
-- Scan history with new/recurring/remediated comparisons across repeated scans.
-- Remediation status tracking and HTML/PDF report export.
+Finding status tracks review and remediation:
 
-## Quality and safety checklist
+- `OPEN`
+- `IN_PROGRESS`
+- `REMEDIATED`
+- `ACCEPTED_RISK`
+- `FALSE_POSITIVE`
 
-- Detectors run only against the approved target allowlist — no arbitrary public hosts.
-- Only synthetic accounts, files, and data are used or seeded.
-- No destructive payloads, no denial-of-service, no automatic exploitation for system control.
-- A detector failure never aborts the rest of a scan.
-- Every finding retains a detector ID, scan ID, and evidence for reproducibility.
-- The environment runs reproducibly with Docker Compose; secrets stay out of Git.
+Evidence is stored separately and linked to its finding. This keeps the finding concise while retaining detector probe data for review and reproducibility.
 
-Full checklist: [implementation plan §18](VulnVista_IMPLEMENTATION_PLAN.md#18-security-and-ethical-controls-checklist).
+### API capabilities
 
-## Standards and methodology
+All application routes are mounted below `/api`.
 
-| Area | Standard | Project use |
+| Method | Endpoint | Purpose |
 | --- | --- | --- |
-| Vulnerability classes | OWASP Top 10 | Structures the detector catalogue and dashboard categories |
-| Weakness classification | CWE | Attached to each finding where applicable |
-| Known-vulnerability tracking | CVE | Attached to vulnerable-service findings |
-| Technical severity | CVSS v3.1 | Consistent severity baseline where a score applies |
+| `GET` | `/health` | Check backend and environment health |
+| `POST` | `/targets` | Register a target and calculate its approval state |
+| `GET` | `/targets` | List targets |
+| `GET` | `/targets/{target_id}` | Get one target |
+| `POST` | `/scans` | Queue a scan for an approved target |
+| `GET` | `/scans` | List scans, newest first |
+| `GET` | `/scans/{scan_id}` | Poll scan state and metadata |
+| `GET` | `/scans/{scan_id}/findings` | Retrieve findings produced by a scan |
+| `GET` | `/findings` | List findings, optionally filtered by target, severity, or validation status |
+| `GET` | `/findings/{finding_id}` | Retrieve a finding with its evidence |
+| `PATCH` | `/findings/{finding_id}/status` | Update remediation status |
 
-## Definition of done
+Authentication endpoints under `/api/auth` are being integrated and should not be treated as complete until their supporting security, user-model, schema, dependency, migration, and frontend auth modules are present and tested.
 
-Full checklist: [implementation plan §20](VulnVista_IMPLEMENTATION_PLAN.md#20-final-definition-of-project-done). Summary — the project is complete when:
+## Typical user workflow
 
-- [ ] All four approved lab targets are reachable in the isolated lab.
-- [ ] All fifteen detectors work and share a common schema.
-- [ ] Findings, evidence, severity, and confidence persist in PostgreSQL.
-- [ ] The dashboard presents findings, scan history, and remediation status.
-- [ ] Report export, Docker deployment, and CI/CD all work.
-- [ ] Evaluation metrics (detection rate, false-positive/negative rate, repeatability) are calculated.
-- [ ] Documentation, academic report, and final demonstration are complete.
+1. Start the VulnVista core stack and isolated lab targets.
+2. Open the frontend dashboard.
+3. Register a bundled lab target or confirm authorization for another controlled target.
+4. Choose the approved target and a detector profile on the scans page.
+5. Start the scan and monitor its status.
+6. Review findings, severity, confidence, standards mappings, remediation, and evidence.
+7. Update each finding as it is investigated or remediated.
+8. Re-scan and compare the current security posture on the dashboard.
 
-## Team workflow
+## Architecture
 
-1. Create a branch for each issue or milestone task.
-2. Keep commits focused and reference the related requirement or checklist item.
-3. Require another team member to review detector, schema, and safety-control changes.
-4. Do not commit real credentials, `.env` files, or generated evidence containing sensitive data.
-5. Update this README's milestone table as milestones are reviewed and accepted.
+```mermaid
+flowchart LR
+    U[Authorized user] --> UI[React and TypeScript UI]
+    UI --> API[FastAPI API]
+    API --> SAFE[Target authorization controls]
+    SAFE --> RUN[Background scan runner]
+    RUN --> REG[Detector registry and profiles]
+    REG --> LAB[Approved lab target]
+    REG --> VAL[Result validation]
+    VAL --> FIND[Findings and evidence]
+    FIND --> DB[(PostgreSQL)]
+    DB --> API
+```
 
-## Project status
+## Technology stack
 
-**Current phase:** Week 1 — project foundation (monorepo, backend/frontend scaffolding, and Docker Compose persistence are in place; lab target deployment and the first detectors are next).
-**Overall progress:** M1 in progress, 0/15 detectors implemented.
+| Layer | Technology |
+| --- | --- |
+| Backend | Python, FastAPI, SQLAlchemy async, Alembic, uv |
+| Database | PostgreSQL 16 |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS v4, React Router |
+| Detection | Purpose-built asynchronous Python detector modules |
+| Lab | DVWA, OWASP Juice Shop, Metasploitable2, and a local TLS test service |
+| Deployment | Docker Compose with persistent host-mounted storage |
 
-## Monorepo quickstart
+## Repository structure
 
-The repository is structured as a monorepo: [backend/](backend/) (FastAPI + PostgreSQL),
-[frontend/](frontend/) (React/TypeScript), [lab/](lab/) (vulnerable scan targets), plus
-`docs/`, `scripts/`, and `.github/workflows/`. See
-[VulnVista_IMPLEMENTATION_PLAN.md](VulnVista_IMPLEMENTATION_PLAN.md) for the full
-architecture and roadmap.
+```text
+backend/
+  app/api/          REST endpoints and dependencies
+  app/models/       SQLAlchemy database models
+  app/scanners/     detector implementations and registry
+  app/schemas/      API request and response schemas
+  app/services/     scan runner and supporting services
+  tests/            backend tests
+frontend/
+  src/components/   shared interface components
+  src/pages/        dashboard and workflow pages
+  src/services/     API client
+  src/types/        shared frontend types
+lab/                isolated vulnerable targets
+scripts/            setup and support scripts
+storage/            persistent runtime data, ignored by Git
+```
+
+## Quickstart
 
 ### Prerequisites
 
 - Docker and Docker Compose v2
-- (Optional, for running outside Docker) [uv](https://docs.astral.sh/uv/) for the
-  backend and Node.js 20+ for the frontend
+- Optional local tools: [uv](https://docs.astral.sh/uv/) and Node.js 20+
 
-### First run
-
-Before the first start, set a strong `SECRET_KEY` and the three `INITIAL_ADMIN_*`
-values in `.env`. The backend creates that admin account once; subsequent starts do
-not overwrite it.
+### Start the application
 
 ```bash
-./scripts/setup.sh        # creates ./storage, copies .env.example -> .env, creates the shared network
-docker compose up --build # starts postgres + backend + frontend
+./scripts/setup.sh
+docker compose up --build
 ```
 
-- Backend API: <http://localhost:8000/api/health>
-- Frontend dashboard: <http://localhost:5173>
+Services:
 
-Sign in with `INITIAL_ADMIN_USERNAME` (or `INITIAL_ADMIN_EMAIL`) and
-`INITIAL_ADMIN_PASSWORD`. Admins can create platform users through
-`POST /api/auth/users`; analysts can create targets and scans, while viewers have
-read-only access.
+- Frontend: <http://localhost:5173>
+- Backend health: <http://localhost:8000/api/health>
+- FastAPI documentation: <http://localhost:8000/docs>
+- pgAdmin: <http://localhost:5050>
 
-### Persistent data
+The setup script prepares storage, creates `.env` from `.env.example` when necessary, and creates the shared `vulnvista_net` network.
 
-All state lives on the host under `./storage/` (git-ignored), bind-mounted into the
-containers — **not** inside a container's writable layer or an opaque Docker-managed
-volume:
-
-- `./storage/postgres` — the PostgreSQL data directory
-- `./storage/uploads` — backend-collected scan evidence / uploaded files
-- `./storage/lab/juice-shop` — OWASP Juice Shop challenge/user state
-
-`docker compose down`, a host reboot, or `docker compose up` again all leave this data
-untouched. Only `docker compose down -v` or manually deleting `./storage` removes it.
-
-### Lab targets
-
-DVWA and OWASP Juice Shop run from a separate compose file so the core app stack stays
-fast and independent of them. Both compose files attach to the shared `vulnvista_net`
-network as external, so run `./scripts/setup.sh` once first (it creates the network)
-before starting either one:
+### Start the lab targets
 
 ```bash
 docker compose --env-file .env -f lab/docker-compose.yml up -d
 ```
 
-See [lab/README.md](lab/README.md) for target URLs/credentials and
-[lab/METASPLOITABLE.md](lab/METASPLOITABLE.md) for running Metasploitable2 as a VM
-(it has no official Docker image).
+See [lab/README.md](lab/README.md) for URLs and credentials, and [lab/METASPLOITABLE.md](lab/METASPLOITABLE.md) for the Metasploitable2 VM option.
+
+### Persistent data
+
+Runtime data is stored on the host so it survives container restarts:
+
+- `storage/postgres` contains PostgreSQL data.
+- `storage/uploads` contains backend evidence and uploaded artifacts.
+- `storage/lab/juice-shop` contains Juice Shop state.
+
+`docker compose down` does not remove these directories. Deleting `storage/` removes persisted local state and should only be done intentionally.
+
+## Development and verification
+
+```bash
+# Backend tests
+docker compose exec backend pytest
+
+# Frontend checks
+docker compose exec frontend npm run lint
+docker compose exec frontend npm run build
+```
+
+Current backend tests cover health, target allowlisting, and several detector implementations. New detectors and workflow changes should include focused tests before integration.
+
+## Safety principles
+
+- Scan only systems that are isolated and explicitly authorized.
+- Use synthetic users, files, and data.
+- Do not introduce destructive payloads, denial-of-service behavior, or automated takeover.
+- Keep real credentials, `.env` files, and sensitive evidence out of Git.
+- Retain scan IDs, detector IDs, validation results, and evidence for reproducibility.
+- Treat detector failures independently and expose them through scan status.
+
+## Planned work
+
+- Complete and test authentication, authorization, and user management.
+- Finish integration of the evidence workspace.
+- Add the SSRF scan profile and test it through the API workflow.
+- Implement the remaining five planned detector categories.
+- Add repeat-scan comparison and new/recurring/remediated classification.
+- Add HTML/PDF report export.
+- Expand frontend, API, integration, and end-to-end tests.
+- Complete CI/CD and release documentation.
+
+## Team workflow
+
+1. Create a focused branch for each feature or issue.
+2. Keep commits limited to one coherent change.
+3. Review detector, schema, authorization, and safety-control changes before merging.
+4. Run relevant tests and builds before opening a pull request.
+5. Update this README when feature availability changes.
 
 ---
 
