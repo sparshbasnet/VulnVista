@@ -54,7 +54,12 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from app.scanners.base import BaseDetector, DetectorResult, ScanContext
+from app.scanners.base import (
+    BaseDetector,
+    DetectorResult,
+    ScanContext,
+    scope_cfg_to_path,
+)
 from app.scanners.presets.xxe import GENERIC_DEFAULTS, LAB_PRESETS
 
 
@@ -174,6 +179,7 @@ class XXEDetector(BaseDetector):
         host = parsed.hostname or ""
         base = f"{parsed.scheme}://{parsed.netloc}"
         cfg = {**GENERIC_DEFAULTS, **LAB_PRESETS.get(host, {}), **context.extra}
+        scope_cfg_to_path(cfg, context, "xml_endpoint")
         source = (
             "explicit configuration" if "xml_endpoint" in context.extra
             else "lab preset" if host in LAB_PRESETS

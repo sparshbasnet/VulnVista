@@ -35,7 +35,12 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 import httpx
 
-from app.scanners.base import BaseDetector, DetectorResult, ScanContext
+from app.scanners.base import (
+    BaseDetector,
+    DetectorResult,
+    ScanContext,
+    scope_cfg_to_path,
+)
 from app.scanners.presets.command_injection import GENERIC_DEFAULTS, LAB_PRESETS
 
 logger = logging.getLogger(__name__)
@@ -333,6 +338,7 @@ class CommandInjectionDetector(BaseDetector):
         host = parsed.hostname or ""
         base = f"{parsed.scheme}://{parsed.netloc}"
         cfg = {**GENERIC_DEFAULTS, **LAB_PRESETS.get(host, {}), **context.extra}
+        scope_cfg_to_path(cfg, context, "exec_path", "injection_url")
         discovery_path = cfg.get("discovery_path") or parsed.path or "/"
 
         try:

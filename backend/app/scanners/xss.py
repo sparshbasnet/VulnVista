@@ -16,7 +16,12 @@ from urllib.parse import urlencode, urljoin, urlparse
 
 import httpx
 
-from app.scanners.base import BaseDetector, DetectorResult, ScanContext
+from app.scanners.base import (
+    BaseDetector,
+    DetectorResult,
+    ScanContext,
+    scope_cfg_to_path,
+)
 from app.scanners.command_injection import (
     Candidate,
     _candidates_from_form,
@@ -82,6 +87,7 @@ class XSSDetector(BaseDetector):
         host = parsed.hostname or ""
         base = f"{parsed.scheme}://{parsed.netloc}"
         cfg = {**GENERIC_DEFAULTS, **LAB_PRESETS.get(host, {}), **context.extra}
+        scope_cfg_to_path(cfg, context, "exec_path", "injection_url")
         discovery_path = cfg.get("discovery_path") or parsed.path or "/"
 
         try:
