@@ -22,7 +22,10 @@ def upgrade() -> None:
         "users",
         sa.Column("token_version", sa.Integer(), server_default="1", nullable=False),
     )
-    op.add_column("users", sa.Column("password_changed_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "users",
+        sa.Column("password_changed_at", sa.DateTime(timezone=True), nullable=True),
+    )
     op.add_column(
         "users",
         sa.Column("must_change_password", sa.Boolean(), server_default=sa.false(), nullable=False),
