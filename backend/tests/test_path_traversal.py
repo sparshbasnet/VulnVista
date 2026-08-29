@@ -4,13 +4,12 @@ import pytest
 from app.scanners import get_detectors_for_profile
 from app.scanners.base import ScanContext
 from app.scanners.path_traversal import (
-    CANARY_MARKER,
-    CANARY_PATH,
     PathTraversalDetector,
     build_traversal_variants,
     classify,
     extract_marker_snippet,
 )
+from app.scanners.presets.path_traversal import CANARY_MARKER, CANARY_PATH
 
 
 def test_build_variants_target_only_controlled_canary() -> None:

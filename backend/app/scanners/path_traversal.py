@@ -23,34 +23,7 @@ from app.scanners.command_injection import (
     _explicit_candidate,
     parse_forms,
 )
-
-CANARY_MARKER = "VULNVISTA_PATH_TRAVERSAL_CANARY_7F3A9C2E"
-CANARY_PATH = "/var/lib/vulnvista-canary/vulnvista-path-traversal-canary.txt"
-
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "request_timeout": 15.0,
-    "max_candidates": 5,
-    "max_depth": 8,
-    "benign_value": "index.html",
-}
-
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "dvwa": {
-        "login_path": "/login.php",
-        "login_submit_field": "Login",
-        "login_submit_value": "Login",
-        "username": "admin",
-        "password": "password",
-        "post_login_cookies": {"security": "low"},
-        "exec_path": "/vulnerabilities/fi/",
-        "parameter": "page",
-        "method": "GET",
-        "benign_value": "file1.php",
-        "canary_path": CANARY_PATH,
-        "canary_marker": CANARY_MARKER,
-    },
-}
-LAB_PRESETS["vulnvista_dvwa"] = LAB_PRESETS["dvwa"]
+from app.scanners.presets.path_traversal import GENERIC_DEFAULTS, LAB_PRESETS
 
 
 class DetectorError(Exception):

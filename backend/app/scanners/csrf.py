@@ -49,41 +49,12 @@ import httpx
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
 from app.scanners.command_injection import FormSpec, parse_forms
-
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "request_timeout": 15.0,
-    "forged_origin": "https://csrf-poc.vulnvista.invalid",
-}
+from app.scanners.presets.csrf import GENERIC_DEFAULTS, LAB_PRESETS
 
 _TOKEN_NAME_RE = re.compile(
     r"csrf|xsrf|authenticity_token|_token|nonce|anti[-_]?forgery|requestverificationtoken",
     re.IGNORECASE,
 )
-
-# Convenience preset for the bundled DVWA lab container. Its CSRF exercise is
-# a password-change form that, at low security, carries no anti-CSRF token
-# and accepts a plain GET — deliberately vulnerable so the active proof below
-# always has something real to demonstrate against.
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "dvwa": {
-        "login_path": "/login.php",
-        "login_submit_field": "Login",
-        "login_submit_value": "Login",
-        "username": "admin",
-        "password": "password",
-        "post_login_cookies": {"security": "low"},
-        "action_path": "/vulnerabilities/csrf/",
-        "method": "GET",
-        "password_field": "password_new",
-        "confirm_field": "password_conf",
-        "submit_field": "Change",
-        "submit_value": "Change",
-        "new_value": "vulnvista-csrf-{token}",
-        "success_indicator": "Password Changed.",
-        "reset_value": "password",
-    },
-}
-LAB_PRESETS["vulnvista_dvwa"] = LAB_PRESETS["dvwa"]
 
 
 class DetectorError(Exception):

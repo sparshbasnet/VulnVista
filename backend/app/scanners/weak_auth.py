@@ -48,13 +48,7 @@ import httpx
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
 from app.scanners.command_injection import FormSpec, parse_forms
-
-# Target-agnostic tuning only. Everything target-specific lives in
-# LAB_PRESETS or is supplied by the caller via ScanContext.extra.
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "rate_limit_attempts": 12,
-    "request_timeout": 15.0,
-}
+from app.scanners.presets.weak_auth import GENERIC_DEFAULTS, LAB_PRESETS
 
 # Tried in order (after the target's own path) when no login_path override
 # is given and the target's own page has no login form.
@@ -69,24 +63,6 @@ COMMON_LOGIN_PATHS = [
 ]
 
 _LOCKOUT_KEYWORDS = ("lock", "too many attempts", "rate limit", "captcha")
-
-# Convenience preset for the bundled Juice Shop lab container, so its
-# quick-start keeps working with zero configuration — it's a pure JSON REST
-# API with no server-rendered login form to discover, and its enumeration
-# oracle lives on a separate endpoint from the login one.
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "juice-shop": {
-        "login_path": "/rest/user/login",
-        "request_style": "json",
-        "username_field": "email",
-        "password_field": "password",
-        "known_username": "admin@juice-sh.op",
-        "enumeration_path": "/rest/user/security-question",
-        "enumeration_param": "email",
-        "enumeration_response_key": "question",
-    },
-}
-LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
 
 
 class DetectorError(Exception):

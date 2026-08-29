@@ -37,43 +37,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
-
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "request_timeout": 15.0,
-    "login_username_field": "username",
-    "login_password_field": "password",
-    "login_request_style": "form",
-    "register_request_style": "json",
-    "token_submission": "header",
-    "token_header": "Authorization",
-    "token_header_prefix": "Bearer ",
-    "session_check_method": "GET",
-}
-
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "juice-shop": {
-        "login_path": "/rest/user/login",
-        "login_username_field": "email",
-        "login_password_field": "password",
-        "login_request_style": "json",
-        "token_json_path": "authentication.token",
-        "token_submission": "cookie",
-        "token_cookie": "token",
-        "session_check_path": "/rest/user/whoami",
-        "session_marker_json_path": "user.email",
-        "tamper_claim_path": "data.email",
-        "register_path": "/api/Users/",
-        "register_request_style": "json",
-        "register_password_repeat_field": "passwordRepeat",
-        "register_extra_fields": {
-            "securityQuestion": {"id": 1},
-            "securityAnswer": "vulnvista lab",
-        },
-        "username": "vulnvista.jwt@lab.invalid",
-        "password": "VulnVistaJwt1!",
-    }
-}
-LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
+from app.scanners.presets.jwt_session import GENERIC_DEFAULTS, LAB_PRESETS
 
 # Claim keys whose values must never be persisted or logged in the clear.
 SENSITIVE_CLAIM_KEYS = {"password", "totpsecret", "token", "secret", "hash", "otp"}

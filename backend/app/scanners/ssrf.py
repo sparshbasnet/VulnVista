@@ -24,36 +24,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
-
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "request_timeout": 15.0,
-    "callback_wait_seconds": 5.0,
-    "callback_host": "backend",
-    "request_method": "POST",
-    "request_style": "form",
-    "parameter": "url",
-}
-
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "juice-shop": {
-        "ssrf_endpoint": "/profile/image/url",
-        "parameter": "imageUrl",
-        "request_method": "POST",
-        "request_style": "form",
-        "login_path": "/rest/user/login",
-        "login_username_field": "email",
-        "login_password_field": "password",
-        "username": "admin@juice-sh.op",
-        "password": "admin123",
-        "login_request_style": "json",
-        "token_json_path": "authentication.token",
-        "token_cookie": "token",
-        "profile_path": "/rest/user/whoami",
-        "profile_json_path": "user.profileImage",
-        "restore_parameter": "imageUrl",
-    }
-}
-LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
+from app.scanners.presets.ssrf import GENERIC_DEFAULTS, LAB_PRESETS
 
 ALLOWED_CALLBACK_HOSTS = {"backend", "vulnvista_backend"}
 

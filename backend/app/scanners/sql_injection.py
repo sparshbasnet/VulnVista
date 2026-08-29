@@ -55,6 +55,7 @@ from app.scanners.command_injection import (
     _candidates_from_query,
     parse_forms,
 )
+from app.scanners.presets.sql_injection import GENERIC_DEFAULTS, LAB_PRESETS
 
 logger = logging.getLogger(__name__)
 
@@ -65,51 +66,6 @@ TIME_THRESHOLD_MS = 4000
 # Boolean-response lengths within this many characters of each other are
 # treated as "the same", to absorb trivial noise (timestamps, CSRF tokens).
 BOOLEAN_LENGTH_TOLERANCE = 5
-
-# Target-agnostic tuning only. Everything target-specific lives in
-# LAB_PRESETS or is supplied by the caller via ScanContext.extra.
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "benign_value": "1",
-    "quote_char": "'",
-    "request_timeout": 20.0,
-    "max_candidates": 3,
-}
-
-# Convenience presets for the bundled lab containers, so their quick-starts
-# keep working with zero configuration. Anything not listed here falls back
-# to auto-discovery.
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "dvwa": {
-        "login_path": "/login.php",
-        "login_submit_field": "Login",
-        "login_submit_value": "Login",
-        "injection_paths": [
-            "/vulnerabilities/sqli/",
-            "/vulnerabilities/sqli_blind/",
-        ],
-        "parameter": "id",
-        "submit_field": "Submit",
-        "submit_value": "Submit",
-        "method": "GET",
-        "username": "admin",
-        "password": "password",
-        "post_login_cookies": {"security": "low"},
-    },
-    # Juice Shop's search box is an Angular route (`/#/search?q=`), so the
-    # query string never reaches the server and the page itself is a static
-    # SPA shell with no server-rendered forms — invisible to auto-discovery
-    # either way. The `q` value it types into actually lands, unescaped, in
-    # the product-search endpoint's own SQL query (the classic UNION-SQLi
-    # challenge), so point straight at that REST endpoint instead of the
-    # browser route.
-    "juice-shop": {
-        "injection_path": "/rest/products/search",
-        "parameter": "q",
-        "method": "GET",
-    },
-}
-LAB_PRESETS["vulnvista_dvwa"] = LAB_PRESETS["dvwa"]
-LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
 
 # Well-known driver/engine error fragments. Lowercase, matched against a
 # lowercased response body — a hit here that wasn't already in the baseline

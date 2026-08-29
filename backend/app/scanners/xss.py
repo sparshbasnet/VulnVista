@@ -24,37 +24,7 @@ from app.scanners.command_injection import (
     _explicit_candidate,
     parse_forms,
 )
-
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "request_timeout": 15.0,
-    "browser_timeout_ms": 10_000,
-    "max_candidates": 5,
-    "headless": True,
-}
-
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "dvwa": {
-        "login_path": "/login.php",
-        "login_submit_field": "Login",
-        "login_submit_value": "Login",
-        "username": "admin",
-        "password": "password",
-        "post_login_cookies": {"security": "low"},
-        "exec_path": "/vulnerabilities/xss_r/",
-        "parameter": "name",
-        "method": "GET",
-    },
-    # Juice Shop's search input is an Angular route, so it is invisible to
-    # server-rendered form discovery. The `q` value is deliberately passed to
-    # an [innerHTML] sink via bypassSecurityTrustHtml in the bundled lab.
-    "juice-shop": {
-        "exec_path": "/#/search",
-        "parameter": "q",
-        "method": "GET",
-    },
-}
-LAB_PRESETS["vulnvista_dvwa"] = LAB_PRESETS["dvwa"]
-LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
+from app.scanners.presets.xss import GENERIC_DEFAULTS, LAB_PRESETS
 
 
 class DetectorError(Exception):

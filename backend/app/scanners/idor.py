@@ -31,43 +31,7 @@ from urllib.parse import ParseResult, quote, urljoin, urlparse
 import httpx
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
-
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "request_timeout": 15.0,
-    "login_username_field": "username",
-    "login_password_field": "password",
-    "login_request_style": "form",
-    "register_request_style": "json",
-    "object_request_method": "GET",
-    "evidence_body_limit": 400,
-}
-
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "juice-shop": {
-        "login_path": "/rest/user/login",
-        "login_username_field": "email",
-        "login_password_field": "password",
-        "login_request_style": "json",
-        "token_json_path": "authentication.token",
-        "token_header": "Authorization",
-        "token_cookie": "token",
-        "object_id_json_path": "authentication.bid",
-        "object_path_template": "/rest/basket/{object_id}",
-        "owner_marker_json_path": "data.UserId",
-        "register_path": "/api/Users/",
-        "register_request_style": "json",
-        "register_password_repeat_field": "passwordRepeat",
-        "register_extra_fields": {
-            "securityQuestion": {"id": 1},
-            "securityAnswer": "vulnvista lab",
-        },
-        "user_a_username": "vulnvista.idor.a@lab.invalid",
-        "user_a_password": "VulnVistaLabA1!",
-        "user_b_username": "vulnvista.idor.b@lab.invalid",
-        "user_b_password": "VulnVistaLabB1!",
-    }
-}
-LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
+from app.scanners.presets.idor import GENERIC_DEFAULTS, LAB_PRESETS
 
 # The detector only ever reads. Anything that could change or destroy a
 # laboratory object is rejected before a request is sent.

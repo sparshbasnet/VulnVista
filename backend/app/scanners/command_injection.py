@@ -36,6 +36,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 import httpx
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
+from app.scanners.presets.command_injection import GENERIC_DEFAULTS, LAB_PRESETS
 
 logger = logging.getLogger(__name__)
 
@@ -45,34 +46,6 @@ SLEEP_SECONDS = 5
 # `ping -c 4`), so we compare *deltas* rather than absolute time. Require most
 # of the injected sleep to show up before we trust the blind signal.
 TIME_THRESHOLD_MS = 4000
-
-# Target-agnostic tuning only. Everything target-specific lives in
-# LAB_PRESETS or is supplied by the caller via ScanContext.extra.
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "benign_value": "127.0.0.1",
-    "separator": ";",
-    "request_timeout": 20.0,
-    "max_candidates": 5,
-}
-
-# Convenience presets for the bundled lab containers, keyed by hostname, so
-# the DVWA quick-start keeps working with zero configuration. Anything not
-# listed here falls back to auto-discovery.
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "dvwa": {
-        "login_path": "/login.php",
-        "login_submit_field": "Login",
-        "login_submit_value": "Login",
-        "exec_path": "/vulnerabilities/exec/",
-        "parameter": "ip",
-        "submit_field": "Submit",
-        "submit_value": "Submit",
-        "username": "admin",
-        "password": "password",
-        "post_login_cookies": {"security": "low"},
-    },
-}
-LAB_PRESETS["vulnvista_dvwa"] = LAB_PRESETS["dvwa"]
 
 _PRE_BLOCK_RE = re.compile(r"<pre[^>]*>(.*?)</pre>", re.IGNORECASE | re.DOTALL)
 _TAG_RE = re.compile(r"<[^>]+>")

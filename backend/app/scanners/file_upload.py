@@ -18,28 +18,7 @@ import httpx
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
 from app.scanners.command_injection import FormSpec, parse_forms
-
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "request_timeout": 15.0,
-    "max_candidates": 3,
-}
-
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "dvwa": {
-        "login_path": "/login.php",
-        "login_submit_field": "Login",
-        "login_submit_value": "Login",
-        "username": "admin",
-        "password": "password",
-        "post_login_cookies": {"security": "low"},
-        "upload_path": "/vulnerabilities/upload/",
-        "file_field": "uploaded",
-        "submit_field": "Upload",
-        "submit_value": "Upload",
-        "public_base_path": "/hackable/uploads/",
-    },
-}
-LAB_PRESETS["vulnvista_dvwa"] = LAB_PRESETS["dvwa"]
+from app.scanners.presets.file_upload import GENERIC_DEFAULTS, LAB_PRESETS
 
 _REJECTION_RE = re.compile(
     r"not\s+allowed|invalid\s+file|unsupported|forbidden|upload\s+failed|"
