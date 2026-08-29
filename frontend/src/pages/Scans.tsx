@@ -23,6 +23,7 @@ interface Phase {
   state: PhaseState;
 }
 type ProfileId =
+  | "all"
   | "command_injection"
   | "sql_injection"
   | "xss"
@@ -49,6 +50,19 @@ interface ProfileConfig {
 }
 
 const PROFILES: Record<ProfileId, ProfileConfig> = {
+  all: {
+    label: "All Detectors",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for all vulnerabilities",
+    scanningLabel: "Running the full detector suite…",
+    noFindingLabel: "No vulnerabilities detected on this target",
+    help:
+      "Runs every detector against the target. Each detector self-discovers its own " +
+      "inputs and confirms findings independently. Select a specific detector above to " +
+      "scan for a single vulnerability class instead. http://dvwa is a bundled lab target " +
+      "requiring no setup.",
+  },
   command_injection: {
     label: "Command Injection",
     targetType: "webapp",
@@ -649,8 +663,9 @@ export default function Scans() {
     setPhases([]);
     const cfg = PROFILES[profile];
     // Scope mode: a discovery has been run, so reuse its target and attack only
-    // the checked paths with every detector. Otherwise fall back to the classic
-    // single-profile scan that lets each detector self-discover.
+    // the checked paths — with every detector when "All Detectors" is selected,
+    // otherwise with just the chosen detector. Without a discovery we fall back to
+    // the classic single-target scan that lets each detector self-discover.
     const allDiscovered = (discovery?.paths ?? []).map((entry) => entry.path);
     const scopeMode = Boolean(discovery && discoveredTarget && allDiscovered.length > 0);
     const inScopePaths = allDiscovered.filter((path) => inScope.has(path));
@@ -670,7 +685,7 @@ export default function Scans() {
       );
       let current = await api.createScan({
         target_id: target.id,
-        scan_profile: scopeMode ? "full" : profile,
+        scan_profile: profile === "all" ? "full" : profile,
         ...(scopeMode
           ? { in_scope_paths: inScopePaths, out_of_scope_paths: outOfScopePaths }
           : {}),
@@ -960,7 +975,8 @@ export default function Scans() {
                     </p>
                     <p className="mt-1 text-[10px] leading-relaxed text-[#676360]">
                       Crawl the target to map its paths, then pick which are in scope. A scoped
-                      run attacks only the selected paths with every detector.
+                      run attacks only the selected paths with the detector chosen above (or every
+                      detector when "All Detectors" is selected).
                     </p>
                   </div>
                   <button
@@ -990,7 +1006,7 @@ export default function Scans() {
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d0ccc7] pt-4">
                 <p className="text-[9px] font-bold uppercase tracking-wide text-[#676360]">
                   {scopeMode
-                    ? `Scoped run · full detector suite across ${inScope.size} path(s)`
+                    ? `Scoped run · ${profile === "all" ? "full detector suite" : PROFILES[profile].label} across ${inScope.size} path(s)`
                     : "Output: finding record + structured evidence"}
                 </p>
                 <button
