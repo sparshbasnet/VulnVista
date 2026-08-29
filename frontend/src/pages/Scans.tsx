@@ -630,7 +630,7 @@ export default function Scans() {
       setDiscovery(current);
       // Everything in scope by default; the operator narrows from there.
       setInScope(new Set(paths.map((entry) => entry.path)));
-      begin("Select in-scope paths below, then start the scan");
+      begin("Select in-scope paths above, then start the scan");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
