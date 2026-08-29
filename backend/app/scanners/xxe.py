@@ -55,35 +55,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
-
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "request_timeout": 15.0,
-    "oob_wait_seconds": 3.0,
-    "request_style": "raw",
-    "callback_host": "backend",
-    # A file present on virtually every Linux container, containing nothing
-    # but public OS branding info — never sensitive data. Set either to a
-    # falsy value in scan config to skip this probe.
-    "local_file_path": "/etc/os-release",
-    "local_file_fingerprint": "PRETTY_NAME=",
-}
-
-# Preset for the bundled Juice Shop lab container's deprecated B2B file
-# upload endpoint (routes/fileUpload.ts -> handleXmlUpload): a multipart
-# upload accepting a .xml file, parsed with entity resolution enabled before
-# being rejected with a 410. No authentication required. Note: Juice Shop
-# disables this code path by default whenever it detects it's running in a
-# container (NODE_ENV=unsafe or a safetyOverride config re-enables it) — see
-# lab/docker-compose.yml.
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "juice-shop": {
-        "xml_endpoint": "/file-upload",
-        "request_style": "multipart",
-        "upload_field": "file",
-        "upload_filename": "probe.xml",
-    },
-}
-LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
+from app.scanners.presets.xxe import GENERIC_DEFAULTS, LAB_PRESETS
 
 
 class DetectorError(Exception):
