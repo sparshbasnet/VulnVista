@@ -221,6 +221,7 @@ class MisconfigurationDetector(BaseDetector):
     detector_id = "misconfiguration"
     name = "Security Misconfiguration"
     vulnerability_type = "misconfiguration"
+    scan_scope = "host"
     supported_targets = ["webapp"]
 
     async def check(self, context: ScanContext) -> DetectorResult:

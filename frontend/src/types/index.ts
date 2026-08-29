@@ -1,5 +1,7 @@
 export type ScanStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "PARTIAL" | "FAILED" | "CANCELLED";
 
+export type DiscoveryStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
+
 export type FindingStatus = "OPEN" | "IN_PROGRESS" | "REMEDIATED" | "ACCEPTED_RISK" | "FALSE_POSITIVE";
 
 export type ValidationStatus = "NOT_DETECTED" | "SUSPECTED" | "CONFIRMED" | "INCONCLUSIVE" | "ERROR";
@@ -79,6 +81,34 @@ export interface Scan {
   duration_seconds: number | null;
   initiated_by: string | null;
   error_summary: string | null;
+  /** Paths attacked when the scan was scoped from a discovery tree; null for legacy scans. */
+  in_scope_paths: string[] | null;
+  /** Discovered paths the operator excluded from the scan; kept for the report. */
+  out_of_scope_paths: string[] | null;
+  created_at: string;
+}
+
+/** One entry from a discovery crawl — the surface area of a single reachable page. */
+export interface DiscoveredPath {
+  url: string;
+  path: string;
+  methods: string[];
+  has_form: boolean;
+  params: string[];
+  depth: number;
+}
+
+/** A crawl of a target that maps its reachable paths for scope selection. */
+export interface Discovery {
+  id: string;
+  target_id: string;
+  status: DiscoveryStatus;
+  started_at: string | null;
+  completed_at: string | null;
+  initiated_by: string | null;
+  error_summary: string | null;
+  page_count: number;
+  paths: DiscoveredPath[] | null;
   created_at: string;
 }
 

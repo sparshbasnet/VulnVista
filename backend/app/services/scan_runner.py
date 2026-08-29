@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +27,57 @@ logger = logging.getLogger(__name__)
 # "NOT_DETECTED" run leaves no finding behind, and an "ERROR" run is surfaced via
 # the scan's error_summary rather than as a phantom finding.
 _REPORTABLE = {"CONFIRMED", "SUSPECTED", "INCONCLUSIVE"}
+
+# Upper bound on in-scope paths a single scan will attack, so a large discovery
+# tree can't turn one scan into thousands of detector runs.
+MAX_SCOPED_PATHS = 25
+
+
+def _build_runs(
+    detectors: list[BaseDetector], target: Target, scan: Scan
+) -> list[tuple[BaseDetector, ScanContext]]:
+    """Expand the scan into concrete (detector, context) runs.
+
+    Unscoped scan (no in_scope_paths): each detector runs once with the target's
+    own base_url, exactly as before.
+
+    Scoped scan: host-level detectors (TLS, open services, …) still run once for
+    the whole target, while path-level detectors run once per in-scope path —
+    the path is fed both as the context's base_url and as ``discovery_path`` so
+    every detector, whether it keys off the URL path or the override, probes that
+    exact path. Out-of-scope paths are simply never turned into a run.
+    """
+    base_extra = target.scan_config or {}
+    base_context = ScanContext(
+        target_id=str(target.id), base_url=target.base_url, extra=base_extra
+    )
+
+    in_scope = scan.in_scope_paths or []
+    if not in_scope:
+        return [(detector, base_context) for detector in detectors]
+
+    parsed = urlparse(target.base_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    paths = in_scope[:MAX_SCOPED_PATHS]
+
+    runs: list[tuple[BaseDetector, ScanContext]] = []
+    for detector in detectors:
+        if detector.scan_scope == "host":
+            runs.append((detector, base_context))
+            continue
+        for path in paths:
+            path = path if path.startswith("/") else f"/{path}"
+            runs.append(
+                (
+                    detector,
+                    ScanContext(
+                        target_id=str(target.id),
+                        base_url=f"{origin}{path}",
+                        extra={**base_extra, "discovery_path": path},
+                    ),
+                )
+            )
+    return runs
 
 
 async def run_scan(scan_id: uuid.UUID) -> None:
@@ -51,15 +103,13 @@ async def run_scan(scan_id: uuid.UUID) -> None:
         scan.started_at = datetime.now(UTC)
         await db.commit()
 
-        context = ScanContext(
-            target_id=str(target.id), base_url=target.base_url, extra=target.scan_config or {}
-        )
         detectors = get_detectors_for_profile(scan.scan_profile)
+        runs = _build_runs(detectors, target, scan)
 
         errors = 0
         mixed_outcomes = False
         try:
-            for detector in detectors:
+            for detector, context in runs:
                 detector_had_error = False
                 detector_had_non_error = False
                 try:
@@ -87,7 +137,7 @@ async def run_scan(scan_id: uuid.UUID) -> None:
 
             if errors == 0:
                 scan.status = ScanStatus.COMPLETED
-            elif errors < len(detectors) or mixed_outcomes:
+            elif errors < len(runs) or mixed_outcomes:
                 scan.status = ScanStatus.PARTIAL
             else:
                 scan.status = ScanStatus.FAILED

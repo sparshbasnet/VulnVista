@@ -143,7 +143,10 @@ export default function Targets() {
           </table>
         </div>
         <p className="mt-3 text-[9px] leading-relaxed text-[#676360]">
-          A target record represents a specific authorization context. Similar URLs are not merged automatically because credentials and scan configuration may differ.
+          A target record represents a specific authorization context. Re-registering an endpoint
+          already on file reuses its record, so scan history stays in one place. A different scan
+          configuration — a login, a cookie, an explicit parameter — registers separately, because
+          it is a genuinely different assessment of the same host.
         </p>
       </section>
     </div>

@@ -265,6 +265,7 @@ class JWTSessionDetector(BaseDetector):
     detector_id = "jwt_session"
     name = "JWT / Session Weaknesses"
     vulnerability_type = "jwt_session"
+    scan_scope = "host"
     supported_targets = ["webapp"]
 
     async def check(self, context: ScanContext) -> DetectorResult:
