@@ -6,6 +6,7 @@ import PageHeader from "../components/PageHeader";
 import ScopeTree from "../components/ScopeTree";
 import { useAppData } from "../hooks/useAppData";
 import { downloadFindingsReport } from "../lib/report";
+import type { ReportFormat } from "../lib/report";
 import { api } from "../services/api";
 import type { Discovery, Finding, Scan, Target } from "../types";
 import { useAuth } from "../auth/useAuth";
@@ -318,6 +319,7 @@ export default function Scans() {
   const { targets: registeredTargets, refresh, replaceFinding } = useAppData();
   const [scans, setScans] = useState<Scan[]>([]);
   const [profile, setProfile] = useState<ProfileId>("command_injection");
+  const [reportFormat, setReportFormat] = useState<ReportFormat>("csv");
   const [url, setUrl] = useState(PROFILES.command_injection.defaultUrl);
   const [name, setName] = useState("");
   const [authorized, setAuthorized] = useState(false);
@@ -1064,18 +1066,32 @@ export default function Scans() {
               <p className="vv-kicker">Latest run</p>
               <h2 className="mt-1 text-lg font-black tracking-[-0.03em]">Scan scope</h2>
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                downloadFindingsReport(findings, {
-                  inScope: discoveredPaths.map((p) => p.path).filter((p) => inScope.has(p)),
-                  outOfScope: discoveredPaths.map((p) => p.path).filter((p) => !inScope.has(p)),
-                })
-              }
-              className="vv-button-secondary"
-            >
-              Download report
-            </button>
+            <div className="flex items-end gap-2">
+              <label>
+                <span className="vv-label">Format</span>
+                <select
+                  value={reportFormat}
+                  onChange={(event) => setReportFormat(event.target.value as ReportFormat)}
+                  className="vv-input mt-2 font-bold"
+                  aria-label="Report format"
+                >
+                  <option value="csv">CSV</option>
+                  <option value="doc">Doc</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadFindingsReport(findings, reportFormat, {
+                    inScope: discoveredPaths.map((p) => p.path).filter((p) => inScope.has(p)),
+                    outOfScope: discoveredPaths.map((p) => p.path).filter((p) => !inScope.has(p)),
+                  })
+                }
+                className="vv-button-secondary"
+              >
+                Download report
+              </button>
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="border border-[#aaa6a1] bg-[#f7f6f4]">
