@@ -6,6 +6,7 @@ import PageHeader from "../components/PageHeader";
 import ScopeTree from "../components/ScopeTree";
 import { useAppData } from "../hooks/useAppData";
 import { downloadFindingsReport } from "../lib/report";
+import type { ReportFormat } from "../lib/report";
 import { api } from "../services/api";
 import type { Discovery, Finding, Scan, Target } from "../types";
 import { useAuth } from "../auth/useAuth";
@@ -23,6 +24,7 @@ interface Phase {
   state: PhaseState;
 }
 type ProfileId =
+  | "all"
   | "command_injection"
   | "sql_injection"
   | "xss"
@@ -49,6 +51,19 @@ interface ProfileConfig {
 }
 
 const PROFILES: Record<ProfileId, ProfileConfig> = {
+  all: {
+    label: "All Detectors",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for all vulnerabilities",
+    scanningLabel: "Running the full detector suite…",
+    noFindingLabel: "No vulnerabilities detected on this target",
+    help:
+      "Runs every detector against the target. Each detector self-discovers its own " +
+      "inputs and confirms findings independently. Select a specific detector above to " +
+      "scan for a single vulnerability class instead. http://dvwa is a bundled lab target " +
+      "requiring no setup.",
+  },
   command_injection: {
     label: "Command Injection",
     targetType: "webapp",
@@ -304,6 +319,7 @@ export default function Scans() {
   const { targets: registeredTargets, refresh, replaceFinding } = useAppData();
   const [scans, setScans] = useState<Scan[]>([]);
   const [profile, setProfile] = useState<ProfileId>("command_injection");
+  const [reportFormat, setReportFormat] = useState<ReportFormat>("csv");
   const [url, setUrl] = useState(PROFILES.command_injection.defaultUrl);
   const [name, setName] = useState("");
   const [authorized, setAuthorized] = useState(false);
@@ -649,8 +665,9 @@ export default function Scans() {
     setPhases([]);
     const cfg = PROFILES[profile];
     // Scope mode: a discovery has been run, so reuse its target and attack only
-    // the checked paths with every detector. Otherwise fall back to the classic
-    // single-profile scan that lets each detector self-discover.
+    // the checked paths — with every detector when "All Detectors" is selected,
+    // otherwise with just the chosen detector. Without a discovery we fall back to
+    // the classic single-target scan that lets each detector self-discover.
     const allDiscovered = (discovery?.paths ?? []).map((entry) => entry.path);
     const scopeMode = Boolean(discovery && discoveredTarget && allDiscovered.length > 0);
     const inScopePaths = allDiscovered.filter((path) => inScope.has(path));
@@ -670,7 +687,7 @@ export default function Scans() {
       );
       let current = await api.createScan({
         target_id: target.id,
-        scan_profile: scopeMode ? "full" : profile,
+        scan_profile: profile === "all" ? "full" : profile,
         ...(scopeMode
           ? { in_scope_paths: inScopePaths, out_of_scope_paths: outOfScopePaths }
           : {}),
@@ -960,7 +977,8 @@ export default function Scans() {
                     </p>
                     <p className="mt-1 text-[10px] leading-relaxed text-[#676360]">
                       Crawl the target to map its paths, then pick which are in scope. A scoped
-                      run attacks only the selected paths with every detector.
+                      run attacks only the selected paths with the detector chosen above (or every
+                      detector when "All Detectors" is selected).
                     </p>
                   </div>
                   <button
@@ -990,7 +1008,7 @@ export default function Scans() {
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d0ccc7] pt-4">
                 <p className="text-[9px] font-bold uppercase tracking-wide text-[#676360]">
                   {scopeMode
-                    ? `Scoped run · full detector suite across ${inScope.size} path(s)`
+                    ? `Scoped run · ${profile === "all" ? "full detector suite" : PROFILES[profile].label} across ${inScope.size} path(s)`
                     : "Output: finding record + structured evidence"}
                 </p>
                 <button
@@ -1048,18 +1066,32 @@ export default function Scans() {
               <p className="vv-kicker">Latest run</p>
               <h2 className="mt-1 text-lg font-black tracking-[-0.03em]">Scan scope</h2>
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                downloadFindingsReport(findings, {
-                  inScope: discoveredPaths.map((p) => p.path).filter((p) => inScope.has(p)),
-                  outOfScope: discoveredPaths.map((p) => p.path).filter((p) => !inScope.has(p)),
-                })
-              }
-              className="vv-button-secondary"
-            >
-              Download report
-            </button>
+            <div className="flex items-end gap-2">
+              <label>
+                <span className="vv-label">Format</span>
+                <select
+                  value={reportFormat}
+                  onChange={(event) => setReportFormat(event.target.value as ReportFormat)}
+                  className="vv-input mt-2 font-bold"
+                  aria-label="Report format"
+                >
+                  <option value="csv">CSV</option>
+                  <option value="doc">Doc</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadFindingsReport(findings, reportFormat, {
+                    inScope: discoveredPaths.map((p) => p.path).filter((p) => inScope.has(p)),
+                    outOfScope: discoveredPaths.map((p) => p.path).filter((p) => !inScope.has(p)),
+                  })
+                }
+                className="vv-button-secondary"
+              >
+                Download report
+              </button>
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="border border-[#aaa6a1] bg-[#f7f6f4]">
