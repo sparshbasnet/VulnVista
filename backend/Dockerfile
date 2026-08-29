@@ -36,4 +36,6 @@ RUN mkdir -p /data/uploads
 
 EXPOSE 9000
 
+# Apply Alembic migrations (entrypoint) before starting the app (CMD).
+ENTRYPOINT ["sh", "/app/entrypoint.sh"]
 CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9000", "--reload"]
