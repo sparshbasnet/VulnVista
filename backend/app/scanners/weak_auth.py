@@ -46,7 +46,12 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from app.scanners.base import BaseDetector, DetectorResult, ScanContext
+from app.scanners.base import (
+    BaseDetector,
+    DetectorResult,
+    ScanContext,
+    scope_cfg_to_path,
+)
 from app.scanners.command_injection import FormSpec, parse_forms
 from app.scanners.presets.weak_auth import GENERIC_DEFAULTS, LAB_PRESETS
 
@@ -146,6 +151,7 @@ class WeakAuthDetector(BaseDetector):
         host = parsed.hostname or ""
         base = f"{parsed.scheme}://{parsed.netloc}"
         cfg = {**GENERIC_DEFAULTS, **LAB_PRESETS.get(host, {}), **context.extra}
+        scope_cfg_to_path(cfg, context, "login_path")
         discovery_path = cfg.get("discovery_path") or parsed.path or "/"
         source = (
             "explicit configuration" if "login_path" in context.extra

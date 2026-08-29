@@ -491,3 +491,53 @@ async def test_validate_zap_unreachable_keeps_manual_result_unchanged(
     assert validated.confidence == result.confidence
     assert validated.evidence["zap"]["reachable"] is False
     assert "unavailable" in validated.evidence_summary
+
+
+def test_scoped_run_targets_the_in_scope_path_not_preset_injection_paths() -> None:
+    """A scoped SQLi run must attack exactly its in-scope path, not re-probe the
+    lab preset's fixed injection_paths for every path (which produced duplicate
+    findings — the same two vulnerable endpoints reported once per scoped path)."""
+    from app.scanners.base import scope_cfg_to_path
+    from app.scanners.sql_injection import GENERIC_DEFAULTS, LAB_PRESETS, _explicit_candidates
+
+    # Simulate the merged cfg for a scoped run on DVWA pointed at /upload/,
+    # a path that is NOT one of the preset's injection_paths.
+    scoped_path = "/vulnerabilities/upload/"
+    cfg = {**GENERIC_DEFAULTS, **LAB_PRESETS["dvwa"], "discovery_path": scoped_path}
+    ctx = ScanContext(
+        target_id="t",
+        base_url=f"http://dvwa{scoped_path}",
+        extra={"discovery_path": scoped_path},
+    )
+
+    scope_cfg_to_path(
+        cfg, ctx, "injection_path", "injection_paths", "injection_urls", "injection_url"
+    )
+
+    # preset's list of injection paths is dropped; the scoped path is the target
+    assert "injection_paths" not in cfg
+    assert cfg["injection_path"] == scoped_path
+
+    candidates = _explicit_candidates("http://dvwa", cfg)
+    assert len(candidates) == 1
+    assert candidates[0].url == f"http://dvwa{scoped_path}"
+
+
+def test_unscoped_run_still_uses_preset_injection_paths() -> None:
+    """Without a discovery_path (unscoped), the preset's two injection paths are
+    used unchanged, so the DVWA quick-start keeps probing both sqli endpoints."""
+    from app.scanners.base import scope_cfg_to_path
+    from app.scanners.sql_injection import GENERIC_DEFAULTS, LAB_PRESETS, _explicit_candidates
+
+    cfg = {**GENERIC_DEFAULTS, **LAB_PRESETS["dvwa"]}
+    ctx = ScanContext(target_id="t", base_url="http://dvwa", extra={})
+    scope_cfg_to_path(
+        cfg, ctx, "injection_path", "injection_paths", "injection_urls", "injection_url"
+    )
+
+    assert cfg.get("injection_paths") == ["/vulnerabilities/sqli/", "/vulnerabilities/sqli_blind/"]
+    candidates = _explicit_candidates("http://dvwa", cfg)
+    assert {c.url for c in candidates} == {
+        "http://dvwa/vulnerabilities/sqli/",
+        "http://dvwa/vulnerabilities/sqli_blind/",
+    }

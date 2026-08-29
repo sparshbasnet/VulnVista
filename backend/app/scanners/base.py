@@ -15,6 +15,31 @@ class ScanContext:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+def scope_cfg_to_path(
+    cfg: dict[str, Any],
+    context: ScanContext,
+    primary_key: str,
+    *alt_keys: str,
+) -> None:
+    """Make a scoped run attack exactly its in-scope path, in place on ``cfg``.
+
+    A scoped scan runs a path-level detector once per in-scope path, passing that
+    path as ``context.extra['discovery_path']``. Without this, a lab preset's
+    fixed endpoint (e.g. DVWA's ``injection_paths``) overrides the scoped path, so
+    every in-scope path re-probes the same preset endpoint(s) and the same
+    finding is reported once per path. Here we point the detector's endpoint at
+    the scoped path and drop the preset's endpoint overrides (``primary_key`` and
+    any ``alt_keys``), so each in-scope path is attacked once. No-op when the run
+    isn't scoped (no ``discovery_path`` in ``extra``).
+    """
+    scoped_path = context.extra.get("discovery_path")
+    if not scoped_path:
+        return
+    for key in alt_keys:
+        cfg.pop(key, None)
+    cfg[primary_key] = scoped_path
+
+
 @dataclass
 class DetectorResult:
     """Common result contract every detector must return (plan section 6)."""
