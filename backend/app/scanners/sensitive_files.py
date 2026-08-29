@@ -185,6 +185,7 @@ class SensitiveFilesDetector(BaseDetector):
     detector_id = "sensitive_files"
     name = "Sensitive File Exposure"
     vulnerability_type = "sensitive_files"
+    scan_scope = "host"
     supported_targets = ["webapp"]
 
     async def check(self, context: ScanContext) -> DetectorResult:

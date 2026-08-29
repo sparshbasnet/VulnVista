@@ -3,9 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import FindingCard from "../components/FindingCard";
 import PageHeader from "../components/PageHeader";
+import ScopeTree from "../components/ScopeTree";
 import { useAppData } from "../hooks/useAppData";
+import { downloadFindingsReport } from "../lib/report";
 import { api } from "../services/api";
-import type { Finding, Scan } from "../types";
+import type { Discovery, Finding, Scan, Target } from "../types";
 import { useAuth } from "../auth/useAuth";
 
 const TERMINAL: Scan["status"][] = ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"];
@@ -341,6 +343,12 @@ export default function Scans() {
   const [phases, setPhases] = useState<Phase[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [findings, setFindings] = useState<Finding[] | null>(null);
+  // Discovery / scope selection. When a discovery has been run, its target is
+  // reused for the scan and only the checked paths are attacked (scope mode).
+  const [discovery, setDiscovery] = useState<Discovery | null>(null);
+  const [discoveredTarget, setDiscoveredTarget] = useState<Target | null>(null);
+  const [inScope, setInScope] = useState<Set<string>>(new Set());
+  const [discovering, setDiscovering] = useState(false);
   const cancelled = useRef(false);
 
   useEffect(() => {
@@ -395,6 +403,12 @@ export default function Scans() {
     setAdvJwtCookieName("");
   }
 
+  function resetDiscovery() {
+    setDiscovery(null);
+    setDiscoveredTarget(null);
+    setInScope(new Set());
+  }
+
   function selectProfile(next: ProfileId) {
     // Only clobber the URL if it's still the previous profile's default —
     // preserves whatever the user typed themselves.
@@ -406,6 +420,7 @@ export default function Scans() {
     setAuthorized(false);
     setAuthorizationScope("");
     clearAdvancedOverrides();
+    resetDiscovery();
   }
 
   function updateUrl(next: string) {
@@ -414,6 +429,7 @@ export default function Scans() {
     setAuthorized(false);
     setAuthorizationScope("");
     clearAdvancedOverrides();
+    resetDiscovery();
   }
 
   function chooseRegisteredTarget(id: string) {
@@ -426,11 +442,184 @@ export default function Scans() {
     setAuthorized(false);
     setAuthorizationScope("");
     clearAdvancedOverrides();
+    resetDiscovery();
   }
 
   function acknowledgeAuthorization(checked: boolean) {
     setAuthorized(checked);
     setAuthorizationScope(checked ? url.trim() : "");
+  }
+
+  // Collects the per-target detector overrides (login, cookies, explicit
+  // parameter/path, etc.) from the Advanced fields. Shared by discovery (so the
+  // crawler can log in) and the scan itself.
+  function buildScanConfig(): Record<string, unknown> {
+    const scanConfig: Record<string, unknown> = {};
+    if (advUsername.trim() && advPassword.trim()) {
+      scanConfig.username = advUsername.trim();
+      scanConfig.password = advPassword.trim();
+    }
+    if (advLoginPath.trim()) scanConfig.login_path = advLoginPath.trim();
+    if (advKnownUsername.trim()) scanConfig.known_username = advKnownUsername.trim();
+    if ((profile === "sql_injection" || profile === "command_injection") && advUseZap)
+      scanConfig.use_zap = true;
+    if (advCookie.trim()) scanConfig.cookies = parseCookieHeader(advCookie.trim());
+    if (advParameter.trim()) scanConfig.parameter = advParameter.trim();
+    if (advPath.trim()) {
+      if (/^https?:\/\//i.test(advPath.trim())) scanConfig.injection_url = advPath.trim();
+      else if (profile === "sql_injection") scanConfig.injection_path = advPath.trim();
+      else scanConfig.exec_path = advPath.trim();
+    }
+    if (advXmlEndpoint.trim()) scanConfig.xml_endpoint = advXmlEndpoint.trim();
+    if (advCanaryPath.trim()) scanConfig.canary_path = advCanaryPath.trim();
+    if (advCanaryMarker.trim()) scanConfig.canary_marker = advCanaryMarker.trim();
+    if (advUploadPath.trim()) {
+      if (/^https?:\/\//i.test(advUploadPath.trim())) scanConfig.upload_url = advUploadPath.trim();
+      else scanConfig.upload_path = advUploadPath.trim();
+    }
+    if (advFileField.trim()) scanConfig.file_field = advFileField.trim();
+    if (advPublicBasePath.trim()) scanConfig.public_base_path = advPublicBasePath.trim();
+    if (advDirectoryPaths.trim()) {
+      scanConfig.directory_paths = advDirectoryPaths.split(",").map((path) => path.trim()).filter(Boolean);
+    }
+    if (advDiagnosticPaths.trim()) {
+      scanConfig.diagnostic_paths = advDiagnosticPaths.split(",").map((path) => path.trim()).filter(Boolean);
+    }
+    if (advSsrfEndpoint.trim()) scanConfig.ssrf_endpoint = advSsrfEndpoint.trim();
+    if (advSsrfParameter.trim()) scanConfig.parameter = advSsrfParameter.trim();
+    if (profile === "ssrf") {
+      scanConfig.request_style = advSsrfRequestStyle;
+      scanConfig.request_method = advSsrfRequestStyle === "query" ? "GET" : "POST";
+    }
+    if (advIdorUserA.trim() && advIdorPassA.trim()) {
+      scanConfig.user_a_username = advIdorUserA.trim();
+      scanConfig.user_a_password = advIdorPassA.trim();
+    }
+    if (advIdorUserB.trim() && advIdorPassB.trim()) {
+      scanConfig.user_b_username = advIdorUserB.trim();
+      scanConfig.user_b_password = advIdorPassB.trim();
+    }
+    if (advIdorObjectTemplate.trim()) scanConfig.object_path_template = advIdorObjectTemplate.trim();
+    if (advIdorOwnerMarker.trim()) scanConfig.owner_marker_json_path = advIdorOwnerMarker.trim();
+    if (advJwtSessionPath.trim()) scanConfig.session_check_path = advJwtSessionPath.trim();
+    if (advJwtMarkerPath.trim()) scanConfig.session_marker_json_path = advJwtMarkerPath.trim();
+    if (advJwtClaimPath.trim()) scanConfig.tamper_claim_path = advJwtClaimPath.trim();
+    if (profile === "jwt_session") {
+      scanConfig.token_submission = advJwtSubmission;
+      if (advJwtSubmission === "cookie" && advJwtCookieName.trim()) {
+        scanConfig.token_cookie = advJwtCookieName.trim();
+      }
+    }
+    return scanConfig;
+  }
+
+  // Ensures a Target record exists for the current URL (creating one with the
+  // Advanced scan config if needed) and confirms it is approved for scanning.
+  // Returns the Target, or throws with a user-facing message.
+  async function ensureAuthorizedTarget(
+    scanConfig: Record<string, unknown>,
+    begin: (label: string) => number,
+    finish: (i: number, state: PhaseState, label?: string) => void,
+  ): Promise<Target> {
+    const cfg = PROFILES[profile];
+    const existingTarget = selectedTargetId === "NEW"
+      ? undefined
+      : registeredTargets.find((candidate) => candidate.id === selectedTargetId);
+    const labTrusted = isTrustedHost(url);
+
+    const p1 = begin(existingTarget ? `Using target ${existingTarget.name}…` : `Registering target ${url.trim()}…`);
+    const target = existingTarget ?? await api.createTarget({
+        name: name.trim() || url.trim(),
+        target_type: cfg.targetType,
+        base_url: url.trim(),
+        environment: "lab",
+        authorization_confirmed: authorized && authorizationScope === url.trim(),
+        ...(Object.keys(scanConfig).length > 0 ? { scan_config: scanConfig } : {}),
+      });
+    finish(p1, "done", existingTarget ? `Target reused: ${target.name}` : `Target ready: ${target.name}`);
+
+    const p2 = begin("Checking authorization…");
+    if (!target.is_allowed) {
+      finish(p2, "error", `${url} is not approved for scanning`);
+      throw new Error(
+        labTrusted
+          ? `${url} could not be approved automatically — please try again.`
+          : `${url} isn't a recognized lab host and no authorization was confirmed. Check ` +
+            `"I have authorization to test this target" above and try again.`,
+      );
+    }
+    finish(
+      p2,
+      "done",
+      labTrusted
+        ? existingTarget ? "Trusted lab target reused ✓" : "Trusted lab host ✓"
+        : existingTarget ? "Authorized target reused ✓" : "Authorized by you ✓",
+    );
+    return target;
+  }
+
+  // Crawls the target and populates the scope tree. The discovered target is
+  // reused by the subsequent scan so we never register it twice.
+  async function runDiscovery() {
+    setDiscovering(true);
+    setError(null);
+    resetDiscovery();
+    setFindings(null);
+
+    const list: Phase[] = [];
+    const render = () => setPhases([...list]);
+    const begin = (label: string) => {
+      list.push({ label, state: "active" });
+      render();
+      return list.length - 1;
+    };
+    const finish = (i: number, state: PhaseState, label?: string) => {
+      list[i] = { label: label ?? list[i].label, state };
+      render();
+    };
+    const relabel = (i: number, label: string) => {
+      list[i] = { ...list[i], label };
+      render();
+    };
+    setPhases([]);
+
+    try {
+      const scanConfig = buildScanConfig();
+      const target = await ensureAuthorizedTarget(scanConfig, begin, finish);
+      setDiscoveredTarget(target);
+
+      const p3 = begin("Crawling target for paths…");
+      let current = await api.createDiscovery({ target_id: target.id });
+      const started = Date.now();
+      let polls = 0;
+      while (current.status !== "COMPLETED" && current.status !== "FAILED") {
+        if (cancelled.current) return;
+        if (polls++ >= MAX_POLLS) {
+          finish(p3, "error", "Timed out waiting for discovery to finish");
+          throw new Error("Timed out waiting for discovery to finish.");
+        }
+        const secs = Math.round((Date.now() - started) / 1000);
+        relabel(p3, `Crawling… ${current.status.toLowerCase()} (${secs}s elapsed)`);
+        await sleep(POLL_INTERVAL_MS);
+        current = await api.getDiscovery(current.id);
+      }
+
+      if (current.status === "FAILED") {
+        finish(p3, "error", "Discovery failed");
+        throw new Error(current.error_summary ?? "Discovery failed.");
+      }
+
+      const paths = current.paths ?? [];
+      finish(p3, "done", `Discovered ${paths.length} path(s)`);
+      setDiscovery(current);
+      // Everything in scope by default; the operator narrows from there.
+      setInScope(new Set(paths.map((entry) => entry.path)));
+      begin("Select in-scope paths below, then start the scan");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDiscovering(false);
+    }
   }
 
   async function startScan(event: FormEvent) {
@@ -459,106 +648,37 @@ export default function Scans() {
 
     setPhases([]);
     const cfg = PROFILES[profile];
-    const existingTarget = selectedTargetId === "NEW"
-      ? undefined
-      : registeredTargets.find((candidate) => candidate.id === selectedTargetId);
-    const labTrusted = isTrustedHost(url);
+    // Scope mode: a discovery has been run, so reuse its target and attack only
+    // the checked paths with every detector. Otherwise fall back to the classic
+    // single-profile scan that lets each detector self-discover.
+    const allDiscovered = (discovery?.paths ?? []).map((entry) => entry.path);
+    const scopeMode = Boolean(discovery && discoveredTarget && allDiscovered.length > 0);
+    const inScopePaths = allDiscovered.filter((path) => inScope.has(path));
+    const outOfScopePaths = allDiscovered.filter((path) => !inScope.has(path));
     try {
-      const scanConfig: Record<string, unknown> = {};
-      if (advUsername.trim() && advPassword.trim()) {
-        scanConfig.username = advUsername.trim();
-        scanConfig.password = advPassword.trim();
-      }
-      if (advLoginPath.trim()) scanConfig.login_path = advLoginPath.trim();
-      if (advKnownUsername.trim()) scanConfig.known_username = advKnownUsername.trim();
-      if ((profile === "sql_injection" || profile === "command_injection") && advUseZap)
-        scanConfig.use_zap = true;
-      if (advCookie.trim()) scanConfig.cookies = parseCookieHeader(advCookie.trim());
-      if (advParameter.trim()) scanConfig.parameter = advParameter.trim();
-      if (advPath.trim()) {
-        if (/^https?:\/\//i.test(advPath.trim())) scanConfig.injection_url = advPath.trim();
-        else if (profile === "sql_injection") scanConfig.injection_path = advPath.trim();
-        else scanConfig.exec_path = advPath.trim();
-      }
-      if (advXmlEndpoint.trim()) scanConfig.xml_endpoint = advXmlEndpoint.trim();
-      if (advCanaryPath.trim()) scanConfig.canary_path = advCanaryPath.trim();
-      if (advCanaryMarker.trim()) scanConfig.canary_marker = advCanaryMarker.trim();
-      if (advUploadPath.trim()) {
-        if (/^https?:\/\//i.test(advUploadPath.trim())) scanConfig.upload_url = advUploadPath.trim();
-        else scanConfig.upload_path = advUploadPath.trim();
-      }
-      if (advFileField.trim()) scanConfig.file_field = advFileField.trim();
-      if (advPublicBasePath.trim()) scanConfig.public_base_path = advPublicBasePath.trim();
-      if (advDirectoryPaths.trim()) {
-        scanConfig.directory_paths = advDirectoryPaths.split(",").map((path) => path.trim()).filter(Boolean);
-      }
-      if (advDiagnosticPaths.trim()) {
-        scanConfig.diagnostic_paths = advDiagnosticPaths.split(",").map((path) => path.trim()).filter(Boolean);
-      }
-      if (advSsrfEndpoint.trim()) scanConfig.ssrf_endpoint = advSsrfEndpoint.trim();
-      if (advSsrfParameter.trim()) scanConfig.parameter = advSsrfParameter.trim();
-      if (profile === "ssrf") {
-        scanConfig.request_style = advSsrfRequestStyle;
-        scanConfig.request_method = advSsrfRequestStyle === "query" ? "GET" : "POST";
-      }
-      if (advIdorUserA.trim() && advIdorPassA.trim()) {
-        scanConfig.user_a_username = advIdorUserA.trim();
-        scanConfig.user_a_password = advIdorPassA.trim();
-      }
-      if (advIdorUserB.trim() && advIdorPassB.trim()) {
-        scanConfig.user_b_username = advIdorUserB.trim();
-        scanConfig.user_b_password = advIdorPassB.trim();
-      }
-      if (advIdorObjectTemplate.trim()) scanConfig.object_path_template = advIdorObjectTemplate.trim();
-      if (advIdorOwnerMarker.trim()) scanConfig.owner_marker_json_path = advIdorOwnerMarker.trim();
-      if (advJwtSessionPath.trim()) scanConfig.session_check_path = advJwtSessionPath.trim();
-      if (advJwtMarkerPath.trim()) scanConfig.session_marker_json_path = advJwtMarkerPath.trim();
-      if (advJwtClaimPath.trim()) scanConfig.tamper_claim_path = advJwtClaimPath.trim();
-      if (profile === "jwt_session") {
-        scanConfig.token_submission = advJwtSubmission;
-        if (advJwtSubmission === "cookie" && advJwtCookieName.trim()) {
-          scanConfig.token_cookie = advJwtCookieName.trim();
-        }
+      if (scopeMode && inScopePaths.length === 0) {
+        throw new Error("Select at least one in-scope path before starting the scan.");
       }
 
-      const p1 = begin(existingTarget ? `Using target ${existingTarget.name}…` : `Registering target ${url.trim()}…`);
-      const target = existingTarget ?? await api.createTarget({
-          name: name.trim() || url.trim(),
-          target_type: cfg.targetType,
-          base_url: url.trim(),
-          environment: "lab",
-          authorization_confirmed: authorized && authorizationScope === url.trim(),
-          ...(Object.keys(scanConfig).length > 0 ? { scan_config: scanConfig } : {}),
-        });
-      finish(p1, "done", existingTarget ? `Target reused: ${target.name}` : `Target registered: ${target.name}`);
+      const scanConfig = buildScanConfig();
+      const target = scopeMode
+        ? discoveredTarget!
+        : await ensureAuthorizedTarget(scanConfig, begin, finish);
 
-      const p2 = begin("Checking authorization…");
-      if (!target.is_allowed) {
-        finish(p2, "error", `${url} is not approved for scanning`);
-        throw new Error(
-          labTrusted
-            ? `${url} could not be approved automatically — please try again.`
-            : `${url} isn't a recognized lab host and no authorization was confirmed. Check ` +
-              `"I have authorization to test this target" above and try again.`,
-        );
-      }
-      finish(
-        p2,
-        "done",
-        labTrusted
-          ? existingTarget ? "Trusted lab target reused ✓" : "Trusted lab host ✓"
-          : existingTarget ? "Authorized target reused ✓" : "Authorized by you ✓",
+      const p3 = begin(
+        scopeMode ? `Launching scoped scan of ${inScopePaths.length} path(s)…` : "Launching scan…",
       );
-
-      const p3 = begin("Launching scan…");
       let current = await api.createScan({
         target_id: target.id,
-        scan_profile: profile,
+        scan_profile: scopeMode ? "full" : profile,
+        ...(scopeMode
+          ? { in_scope_paths: inScopePaths, out_of_scope_paths: outOfScopePaths }
+          : {}),
       });
       upsertScan(current);
       finish(p3, "done", `Scan ${current.id.slice(0, 8)} launched`);
 
-      const p4 = begin(cfg.scanningLabel);
+      const p4 = begin(scopeMode ? "Attacking in-scope paths…" : cfg.scanningLabel);
       const started = Date.now();
       let polls = 0;
       while (!TERMINAL.includes(current.status)) {
@@ -607,6 +727,13 @@ export default function Scans() {
   const canScanTarget = Boolean(
     selectedRegisteredTarget?.is_allowed || isTrustedHost(url) || authorizationScope === url.trim(),
   );
+  const discoveredPaths = discovery?.paths ?? [];
+  const scopeMode = discoveredPaths.length > 0;
+  const scanButtonLabel = busy
+    ? "Scan in progress…"
+    : scopeMode
+      ? `Scan ${inScope.size} in-scope path${inScope.size === 1 ? "" : "s"}`
+      : PROFILES[profile].buttonLabel;
 
   return (
     <div className="bg-[#f7f6f4]">
@@ -825,16 +952,53 @@ export default function Scans() {
                 </fieldset>
               </details>
 
+              <div className="border-t border-[#d0ccc7] pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-[0.08em]">
+                      Scope discovery · optional
+                    </p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-[#676360]">
+                      Crawl the target to map its paths, then pick which are in scope. A scoped
+                      run attacks only the selected paths with every detector.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={runDiscovery}
+                    disabled={busy || discovering || !canScanTarget}
+                    className="vv-button-secondary min-w-[160px]"
+                  >
+                    {discovering
+                      ? "Discovering…"
+                      : scopeMode
+                        ? "Re-discover paths"
+                        : "Discover paths"}
+                  </button>
+                </div>
+                {scopeMode && (
+                  <div className="mt-3">
+                    <ScopeTree paths={discoveredPaths} selected={inScope} onChange={setInScope} />
+                    <p className="mt-2 text-[9px] leading-relaxed text-[#676360]">
+                      Unchecked paths are recorded as out-of-scope on the scan and skipped during
+                      the attack.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d0ccc7] pt-4">
                 <p className="text-[9px] font-bold uppercase tracking-wide text-[#676360]">
-                  Output: finding record + structured evidence
+                  {scopeMode
+                    ? `Scoped run · full detector suite across ${inScope.size} path(s)`
+                    : "Output: finding record + structured evidence"}
                 </p>
                 <button
                   type="submit"
-            disabled={busy || !canScanTarget}
+                  disabled={busy || !canScanTarget || (scopeMode && inScope.size === 0)}
                   className="vv-button-primary min-w-[190px]"
                 >
-                  {busy ? "Scan in progress…" : PROFILES[profile].buttonLabel}
+                  {scanButtonLabel}
                 </button>
               </div>
             </div>
@@ -875,6 +1039,54 @@ export default function Scans() {
         <div className="mx-4 mt-4 border border-[#aaa6a1] bg-[#efedea] p-4 text-[10px] leading-relaxed text-[#676360] sm:mx-5 lg:mx-6">
           Your viewer role has read-only access. Ask an administrator for analyst access to run scans.
         </div>
+      )}
+
+      {findings && scopeMode && (
+        <section className="border-b border-[#aaa6a1] p-4 sm:p-5 lg:p-6">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="vv-kicker">Latest run</p>
+              <h2 className="mt-1 text-lg font-black tracking-[-0.03em]">Scan scope</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                downloadFindingsReport(findings, {
+                  inScope: discoveredPaths.map((p) => p.path).filter((p) => inScope.has(p)),
+                  outOfScope: discoveredPaths.map((p) => p.path).filter((p) => !inScope.has(p)),
+                })
+              }
+              className="vv-button-secondary"
+            >
+              Download report
+            </button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="border border-[#aaa6a1] bg-[#f7f6f4]">
+              <p className="border-b border-[#aaa6a1] bg-[#e5f3eb] px-3 py-2 text-[9px] font-black uppercase tracking-wide text-[#167249]">
+                In scope · {discoveredPaths.filter((p) => inScope.has(p.path)).length}
+              </p>
+              <ul className="vv-scrollbar max-h-[220px] overflow-y-auto p-2 font-mono text-[10px] text-[#201f1e]">
+                {discoveredPaths.filter((p) => inScope.has(p.path)).map((p) => (
+                  <li key={p.path} className="truncate py-0.5" title={p.path}>{p.path}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="border border-[#aaa6a1] bg-[#f7f6f4]">
+              <p className="border-b border-[#aaa6a1] bg-[#ffe9e5] px-3 py-2 text-[9px] font-black uppercase tracking-wide text-[#a61b0d]">
+                Out of scope · {discoveredPaths.filter((p) => !inScope.has(p.path)).length}
+              </p>
+              <ul className="vv-scrollbar max-h-[220px] overflow-y-auto p-2 font-mono text-[10px] text-[#676360]">
+                {discoveredPaths.filter((p) => !inScope.has(p.path)).map((p) => (
+                  <li key={p.path} className="truncate py-0.5" title={p.path}>{p.path}</li>
+                ))}
+                {discoveredPaths.filter((p) => !inScope.has(p.path)).length === 0 && (
+                  <li className="py-0.5 text-[#8a8681]">Everything discovered was in scope.</li>
+                )}
+              </ul>
+            </div>
+          </div>
+        </section>
       )}
 
       {findings && findings.length > 0 && (

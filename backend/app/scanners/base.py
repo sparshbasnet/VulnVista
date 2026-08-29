@@ -44,6 +44,13 @@ class BaseDetector(ABC):
     name: str
     vulnerability_type: str
     supported_targets: list[str] = []
+    # How a scoped scan (one with an in-scope path list) should invoke this
+    # detector. "path": run once per in-scope path, with that path passed as
+    # ``discovery_path`` — for detectors that probe a specific page/endpoint.
+    # "host": run once for the whole target regardless of path — for host- or
+    # network-level detectors (TLS, open services, misconfig) where per-path
+    # runs would just duplicate the same finding.
+    scan_scope: str = "path"
 
     @abstractmethod
     async def check(self, context: ScanContext) -> DetectorResult:

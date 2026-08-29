@@ -47,6 +47,8 @@ DETECTOR_REGISTRY: dict[str, BaseDetector] = {
 
 # scan_profile -> ordered detector_ids to run
 SCAN_PROFILES: dict[str, list[str]] = {
+    # Every detector — used by scoped scans that "attack everything in scope".
+    "full": list(DETECTOR_REGISTRY.keys()),
     "default": ["command_injection"],
     "command_injection": ["command_injection"],
     "sql_injection": ["sql_injection"],

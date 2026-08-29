@@ -211,6 +211,7 @@ class IDORDetector(BaseDetector):
     detector_id = "idor"
     name = "Broken Access Control / IDOR"
     vulnerability_type = "idor"
+    scan_scope = "host"
     supported_targets = ["webapp"]
 
     async def check(self, context: ScanContext) -> DetectorResult:

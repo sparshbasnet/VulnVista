@@ -180,6 +180,7 @@ class SSRFDetector(BaseDetector):
     detector_id = "ssrf"
     name = "Server-Side Request Forgery (SSRF)"
     vulnerability_type = "ssrf"
+    scan_scope = "host"
     supported_targets = ["webapp"]
 
     async def check(self, context: ScanContext) -> DetectorResult:

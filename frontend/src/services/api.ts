@@ -1,4 +1,5 @@
 import type {
+  Discovery,
   Finding,
   FindingStatus,
   PasswordResetIssued,
@@ -115,10 +116,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  createDiscovery: (payload: { target_id: string }) =>
+    request<Discovery>("/discoveries", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getDiscovery: (id: string) => request<Discovery>(`/discoveries/${id}`),
   listScans: () => request<Scan[]>("/scans"),
   getScan: (id: string) => request<Scan>(`/scans/${id}`),
-  createScan: (payload: { target_id: string; scan_profile?: string }) =>
-    request<Scan>("/scans", { method: "POST", body: JSON.stringify(payload) }),
+  createScan: (payload: {
+    target_id: string;
+    scan_profile?: string;
+    in_scope_paths?: string[];
+    out_of_scope_paths?: string[];
+  }) => request<Scan>("/scans", { method: "POST", body: JSON.stringify(payload) }),
   getScanFindings: (id: string) => request<Finding[]>(`/scans/${id}/findings`),
   listFindings: (params?: { target_id?: string; severity?: string }) => {
     const query = new URLSearchParams(

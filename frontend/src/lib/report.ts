@@ -22,8 +22,23 @@ function csvCell(value: unknown): string {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
-export function downloadFindingsReport(findings: Finding[]) {
+/** Path scope of a scoped run — attached to the report so the excluded surface
+ * is visible alongside the findings. */
+export interface ReportScope {
+  inScope: string[];
+  outOfScope: string[];
+}
+
+function scopeSection(scope: ReportScope): string[] {
+  const rows = ["Scope,Path"];
+  for (const path of scope.inScope) rows.push(`${csvCell("in_scope")},${csvCell(path)}`);
+  for (const path of scope.outOfScope) rows.push(`${csvCell("out_of_scope")},${csvCell(path)}`);
+  return [...rows, ""]; // trailing blank line separates the scope block from findings
+}
+
+export function downloadFindingsReport(findings: Finding[], scope?: ReportScope) {
   const rows = [
+    ...(scope ? scopeSection(scope) : []),
     COLUMNS.join(","),
     ...findings.map((f) => COLUMNS.map((col) => csvCell(f[col])).join(",")),
   ];

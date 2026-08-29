@@ -412,6 +412,7 @@ class VulnerableServicesDetector(BaseDetector):
     detector_id = "vulnerable_services"
     name = "Vulnerable Services"
     vulnerability_type = "vulnerable_services"
+    scan_scope = "host"
     supported_targets = ["metasploitable2", "host", "webapp"]
 
     async def check(self, context: ScanContext) -> DetectorResult:
