@@ -74,3 +74,35 @@ def test_scoped_scan_caps_number_of_paths() -> None:
     path_detectors = [d for d in detectors if d.scan_scope == "path"]
     path_runs = [r for r in runs if r[0].scan_scope == "path"]
     assert len(path_runs) == len(path_detectors) * MAX_SCOPED_PATHS
+
+
+def test_scoped_scan_attacks_each_duplicate_path_once() -> None:
+    """The crawler keys entries by URL, so the same path arrives repeatedly
+    (DVWA links /instructions.php from six pages). Each distinct path must be
+    attacked exactly once, however many times it was discovered."""
+    detectors = get_detectors_for_profile("command_injection")
+    paths = ["/", "/instructions.php", "/instructions.php", "/", "/instructions.php"]
+    runs = _build_runs(detectors, _target(), _scan(paths))
+
+    attacked = [c.extra["discovery_path"] for _, c in runs]
+    assert attacked == ["/", "/instructions.php"]
+
+
+def test_scoped_scan_dedupes_before_applying_the_cap() -> None:
+    """Duplicates must not consume the MAX_SCOPED_PATHS budget, or real paths
+    the operator selected get silently dropped in favour of repeats."""
+    detectors = get_detectors_for_profile("command_injection")
+    paths = ["/dup"] * MAX_SCOPED_PATHS + ["/kept"]
+    runs = _build_runs(detectors, _target(), _scan(paths))
+
+    attacked = [c.extra["discovery_path"] for _, c in runs]
+    assert attacked == ["/dup", "/kept"]
+
+
+def test_scoped_scan_dedupes_across_slash_normalization() -> None:
+    """'foo' and '/foo' are the same path once normalized, so they must collapse."""
+    detectors = get_detectors_for_profile("command_injection")
+    runs = _build_runs(detectors, _target(), _scan(["exec", "/exec"]))
+
+    attacked = [c.extra["discovery_path"] for _, c in runs]
+    assert attacked == ["/exec"]
