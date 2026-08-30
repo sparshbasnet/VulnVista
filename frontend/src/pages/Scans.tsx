@@ -428,10 +428,14 @@ export default function Scans() {
   function selectProfile(next: ProfileId) {
     // Only clobber the URL if it's still the previous profile's default —
     // preserves whatever the user typed themselves.
-    if (url === PROFILES[profile].defaultUrl) {
-      setUrl(PROFILES[next].defaultUrl);
-    }
+    const nextUrl = url === PROFILES[profile].defaultUrl ? PROFILES[next].defaultUrl : url;
     setProfile(next);
+    // Which detector runs doesn't change what was crawled, and most profiles
+    // share a default URL (every DVWA one is http://dvwa), so switching
+    // detectors used to silently discard a discovery of the very same target.
+    // Only tear down the crawl-derived state when the switch actually retargets.
+    if (nextUrl === url) return;
+    setUrl(nextUrl);
     setSelectedTargetId("NEW");
     setAuthorized(false);
     setAuthorizationScope("");
