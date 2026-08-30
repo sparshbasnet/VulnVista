@@ -279,6 +279,56 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
   },
 };
 
+// Every detector class, in PROFILES order, minus the "all" bundle. Derived so a
+// new detector shows up in the picker just by being added to PROFILES.
+const SINGLE_PROFILE_IDS = (Object.keys(PROFILES) as ProfileId[]).filter((id) => id !== "all");
+
+/** One selectable row in the detector picker. */
+function ProfileOption({
+  id,
+  active,
+  badge,
+  onSelect,
+}: {
+  id: ProfileId;
+  active: boolean;
+  badge?: string;
+  onSelect: (id: ProfileId) => void;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[11px] font-bold focus-within:outline focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-[#f0321d] ${
+        active ? "bg-[#171616] text-white" : "text-[#171616] hover:bg-[#efedea]"
+      }`}
+    >
+      <input
+        type="radio"
+        name="detector-profile"
+        value={id}
+        checked={active}
+        onChange={() => onSelect(id)}
+        className="sr-only"
+      />
+      <span
+        aria-hidden="true"
+        className={`h-2 w-2 shrink-0 border ${
+          active ? "border-white bg-[#f0321d]" : "border-[#8f8b87] bg-white"
+        }`}
+      />
+      <span className="min-w-0 flex-1 truncate">{PROFILES[id].label}</span>
+      {badge && (
+        <span
+          className={`shrink-0 font-mono text-[8px] font-bold uppercase ${
+            active ? "text-[#c9c6c2]" : "text-[#676360]"
+          }`}
+        >
+          {badge}
+        </span>
+      )}
+    </label>
+  );
+}
+
 const TRUSTED_HOSTS = new Set([
   "dvwa",
   "juice-shop",
@@ -791,18 +841,28 @@ export default function Scans() {
 
           <div className="grid lg:grid-cols-[280px_minmax(0,1fr)]">
             <div className="border-b border-[#aaa6a1] p-4 lg:border-r lg:border-b-0">
-              <label>
-                <span className="vv-label">Detector profile</span>
-                <select
-                  value={profile}
-                  onChange={(event) => selectProfile(event.target.value as ProfileId)}
-                  className="vv-input mt-2 font-bold"
-                >
-                  {(Object.keys(PROFILES) as ProfileId[]).map((id) => (
-                    <option key={id} value={id}>{PROFILES[id].label}</option>
+              <fieldset className="min-w-0">
+                <legend className="vv-label">Detector profile</legend>
+                <div className="mt-2 border border-[#8f8b87] bg-white">
+                  <ProfileOption
+                    id="all"
+                    active={profile === "all"}
+                    badge={`${SINGLE_PROFILE_IDS.length} detectors`}
+                    onSelect={selectProfile}
+                  />
+                  <p className="border-y border-[#d0ccc7] bg-[#efedea] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.08em] text-[#676360]">
+                    Single vulnerability · {SINGLE_PROFILE_IDS.length}
+                  </p>
+                  {SINGLE_PROFILE_IDS.map((id) => (
+                    <ProfileOption
+                      key={id}
+                      id={id}
+                      active={profile === id}
+                      onSelect={selectProfile}
+                    />
                   ))}
-                </select>
-              </label>
+                </div>
+              </fieldset>
               <p className="mt-3 text-[10px] leading-relaxed text-[#676360]">{PROFILES[profile].help}</p>
               <div className="mt-5 border-l-2 border-[#f0321d] pl-3">
                 <p className="text-[9px] font-black uppercase tracking-[0.08em]">Safe scanning boundary</p>
