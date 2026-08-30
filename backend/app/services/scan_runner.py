@@ -58,7 +58,13 @@ def _build_runs(
 
     parsed = urlparse(target.base_url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
-    paths = in_scope[:MAX_SCOPED_PATHS]
+    # The crawler keys discovered entries by URL, so one path arrives once per
+    # URL that reached it (DVWA links /instructions.php from six pages).
+    # Normalize, then dedupe preserving order — otherwise a scoped run attacks
+    # the same path once per duplicate, and the MAX_SCOPED_PATHS cap spends its
+    # budget on repeats and silently drops paths the operator did select.
+    normalized = [p if p.startswith("/") else f"/{p}" for p in in_scope]
+    paths = list(dict.fromkeys(normalized))[:MAX_SCOPED_PATHS]
 
     runs: list[tuple[BaseDetector, ScanContext]] = []
     for detector in detectors:
@@ -66,7 +72,6 @@ def _build_runs(
             runs.append((detector, base_context))
             continue
         for path in paths:
-            path = path if path.startswith("/") else f"/{path}"
             runs.append(
                 (
                     detector,
