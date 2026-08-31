@@ -1,272 +1,477 @@
+"""Cross-Site Request Forgery (CSRF) detector.
+
+Generic and evidence-based, same approach as ``weak_auth.py`` and
+``command_injection.py``. CSRF is fundamentally different from those two in
+one respect: proving it usually means actually performing the state-changing
+operation, which is only safe to do automatically when the caller knows the
+operation is idempotent/resettable. So this detector runs in two tiers:
+
+  1. Passive signals (always run, read-only, safe against any target):
+     - Discover a state-changing form (the target's own page, or an explicit
+       ``action_path`` override) and inspect its hidden fields for anything
+       that looks like an anti-CSRF token (name matching common conventions).
+     - If a token is found, refetch the same form with a second, independent
+       (cookie-less) client and compare token values. An identical value
+       across two unrelated sessions means the token isn't actually bound to
+       a session and can't stop forgery, even though one is present.
+     - A state-changing form reachable via plain GET is flagged on its own —
+       no CSRF token can help if the action doesn't even require a request
+       body, since a bare `<img src>` on an attacker page can trigger it.
+
+  2. Active proof (opt-in — only runs when the caller supplies an explicit
+     ``action_path`` + ``password_field``, e.g. a lab preset or explicit scan
+     config): replay the state-changing request using the victim's ambient
+     session but with the anti-CSRF token dropped and the Origin/Referer
+     spoofed to an unrelated host, exactly as a real cross-site attacker page
+     would send it. Success is judged by a configurable ``success_indicator``
+     string, or by response status otherwise. When it succeeds and the caller
+     supplied a ``reset_value``, the state is immediately restored using the
+     authentic (non-forged) session so later scans/detectors relying on it
+     (e.g. the DVWA lab login) keep working.
+
+Everything is overridable via ``ScanContext.extra`` (populated from
+``Target.scan_config``) — ``action_path``, ``method``, ``password_field``,
+``confirm_field``, ``submit_field``/``submit_value``, ``success_indicator``,
+``reset_value``, ``login_path``/``username``/``password``, etc. The bundled
+DVWA lab container gets a preset with all of this pre-filled (its low-security
+password-change form has no token and accepts plain GET, by design).
+"""
+
 from __future__ import annotations
 
-import asyncio
-from collections import deque
-from html.parser import HTMLParser
-from urllib.parse import ParseResult, urldefrag, urljoin, urlparse
+import re
+import secrets
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from app.scanners.base import BaseDetector, DetectorResult, ScanContext
+from app.scanners.base import (
+    BaseDetector,
+    DetectorResult,
+    ScanContext,
+    scope_cfg_to_path,
+)
+from app.scanners.command_injection import FormSpec, parse_forms
+from app.scanners.presets.csrf import GENERIC_DEFAULTS, LAB_PRESETS
+
+_TOKEN_NAME_RE = re.compile(
+    r"csrf|xsrf|authenticity_token|_token|nonce|anti[-_]?forgery|requestverificationtoken",
+    re.IGNORECASE,
+)
 
 
-class _PageParser(HTMLParser):
-    """Extract HTML forms and navigable links without executing page scripts."""
+class DetectorError(Exception):
+    """A detector could not run to completion — carries a human-readable reason
+    that is surfaced to the user (distinct from a raw transport error)."""
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.forms: list[dict[str, object]] = []
-        self.links: list[str] = []
-        self._current_form: dict[str, object] | None = None
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        attributes = dict(attrs)
-        tag = tag.lower()
+@dataclass
+class CandidateForm:
+    """The resolved state-changing target: submit ``fields`` (defaults for
+    every non-hidden input) to ``url`` via ``method``. ``token_field`` names
+    the hidden field that looks like an anti-CSRF token, if any."""
 
-        if tag == "form":
-            self._current_form = {
-                "method": (attributes.get("method") or "GET").upper(),
-                "action": attributes.get("action") or "",
-                "inputs": [],
-            }
-        elif tag == "input" and self._current_form is not None:
-            inputs = self._current_form["inputs"]
-            assert isinstance(inputs, list)
-            inputs.append(
-                {
-                    "name": attributes.get("name") or "",
-                    "type": (attributes.get("type") or "text").lower(),
-                }
-            )
-        elif tag == "a" and attributes.get("href"):
-            self.links.append(attributes["href"])
+    url: str
+    method: str
+    fields: dict[str, str]
+    hidden_fields: dict[str, str]
+    token_field: str | None
+    source: str  # "explicit configuration" | "lab preset" | "auto-discovered"
 
-    def handle_endtag(self, tag: str) -> None:
-        if tag.lower() == "form" and self._current_form is not None:
-            self.forms.append(self._current_form)
-            self._current_form = None
+
+@dataclass
+class Decision:
+    detected: bool
+    validation_status: str
+    confidence: str
+    reason: str
+    cwe: str
+    cvss_score: float
+
+
+def classify(
+    has_token: bool,
+    token_session_bound: bool | None,
+    form_uses_get: bool,
+    active_checked: bool,
+    active_bypassed: bool,
+) -> Decision:
+    """Turn the raw signals into a validation verdict.
+
+    Kept pure (no I/O) so the decision policy can be unit-tested directly.
+    """
+    if active_checked and active_bypassed:
+        return Decision(
+            True, "CONFIRMED", "HIGH",
+            "a forged cross-site request (token dropped, Origin/Referer spoofed) "
+            "reproduced the state change using only the victim's ambient session",
+            cwe="CWE-352", cvss_score=8.8,
+        )
+    if active_checked:
+        return Decision(
+            False, "NOT_DETECTED", "HIGH",
+            "the forged cross-site request was rejected — the target validates "
+            "the anti-CSRF token and/or the request's origin",
+            cwe="CWE-352", cvss_score=0.0,
+        )
+    if not has_token and form_uses_get:
+        return Decision(
+            True, "CONFIRMED", "MEDIUM",
+            "the state-changing operation is reachable via a plain GET request "
+            "with no anti-CSRF token",
+            cwe="CWE-352", cvss_score=6.5,
+        )
+    if not has_token:
+        return Decision(
+            True, "CONFIRMED", "MEDIUM",
+            "the state-changing form carries no anti-CSRF token",
+            cwe="CWE-352", cvss_score=6.5,
+        )
+    if token_session_bound is False:
+        return Decision(
+            True, "CONFIRMED", "MEDIUM",
+            "the anti-CSRF token is identical across independent sessions, so "
+            "it is not actually bound to the victim's session and cannot "
+            "prevent forgery",
+            cwe="CWE-352", cvss_score=6.5,
+        )
+    if token_session_bound is True:
+        return Decision(
+            False, "NOT_DETECTED", "HIGH",
+            "an anti-CSRF token is present and verified session-bound",
+            cwe="CWE-352", cvss_score=0.0,
+        )
+    return Decision(
+        False, "NOT_DETECTED", "LOW",
+        "an anti-CSRF token is present (session-binding not verified)",
+        cwe="CWE-352", cvss_score=0.0,
+    )
 
 
 class CSRFDetector(BaseDetector):
-    """Passively detect potentially missing CSRF protection on crawled HTML pages."""
-
     detector_id = "csrf"
-    name = "Cross-Site Request Forgery Detector"
-    vulnerability_type = "CSRF"
-    supported_targets = ["web"]
+    name = "Cross-Site Request Forgery"
+    vulnerability_type = "csrf"
+    supported_targets = ["webapp"]
 
     async def check(self, context: ScanContext) -> DetectorResult:
-        """Inspect only the base page, retained for direct detector use and tests."""
+        parsed = urlparse(context.base_url)
+        host = parsed.hostname or ""
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        cfg = {**GENERIC_DEFAULTS, **LAB_PRESETS.get(host, {}), **context.extra}
+        scope_cfg_to_path(cfg, context, "action_path")
+        discovery_path = cfg.get("discovery_path") or parsed.path or "/"
+        source = (
+            "explicit configuration" if "action_path" in context.extra
+            else "lab preset" if host in LAB_PRESETS
+            else "auto-discovered"
+        )
+
         try:
-            async with self._client(context) as client:
-                response = await client.get(context.base_url)
+            async with httpx.AsyncClient(
+                timeout=cfg["request_timeout"],
+                follow_redirects=True,
+                cookies=cfg.get("cookies", {}),
+                headers=cfg.get("headers", {}),
+            ) as client:
+                if cfg.get("login_path") and cfg.get("username") and cfg.get("password"):
+                    await self._authenticate(client, base, host, cfg)
+
+                form = await self._resolve_form(client, base, discovery_path, cfg, source)
+                token_bound = await self._check_token_session_binding(client, form, cfg)
+
+                active_checked = active_bypassed = False
+                extra_evidence: dict[str, Any] = {}
+                if cfg.get("action_path") and cfg.get("password_field"):
+                    active_checked, active_bypassed, extra_evidence = await self._attempt_forgery(
+                        client, form, cfg
+                    )
+
+                decision = classify(
+                    has_token=form.token_field is not None,
+                    token_session_bound=token_bound,
+                    form_uses_get=form.method == "GET",
+                    active_checked=active_checked,
+                    active_bypassed=active_bypassed,
+                )
+                evidence = {
+                    "form_endpoint": form.url,
+                    "form_method": form.method,
+                    "form_discovery": form.source,
+                    "token_field": form.token_field,
+                    "token_session_bound": token_bound,
+                    "active_check_performed": active_checked,
+                    "active_check_bypassed": active_bypassed,
+                    **extra_evidence,
+                }
+                return self._result(form, decision, evidence)
+        except DetectorError as exc:
+            return self._error_result(context, cfg, str(exc))
         except httpx.HTTPError as exc:
-            return self._error_result(str(exc))
-
-        return self._inspect_response(response, context.base_url)
-
-    async def check_all(self, context: ScanContext) -> list[DetectorResult]:
-        """Crawl a bounded same-origin scope and inspect every HTML response."""
-        max_pages = int(context.extra.get("crawl_max_pages", 50))
-        max_depth = int(context.extra.get("crawl_max_depth", 3))
-        delay_seconds = float(context.extra.get("crawl_delay_seconds", 0.1))
-        allowed_prefix = str(context.extra.get("crawl_path_prefix", "/"))
-        base = urlparse(context.base_url)
-        queue: deque[tuple[str, int]] = deque([(context.base_url, 0)])
-        visited: set[str] = set()
-        results: list[DetectorResult] = []
-        request_errors = 0
-
-        async with self._client(context) as client:
-            while queue and len(visited) < max_pages:
-                page_url, depth = queue.popleft()
-                if page_url in visited:
-                    continue
-                visited.add(page_url)
-
-                try:
-                    response = await client.get(page_url)
-                except httpx.HTTPError:
-                    request_errors += 1
-                    continue
-
-                content_type = response.headers.get("content-type", "").lower()
-                if "html" not in content_type:
-                    continue
-
-                inspection = self._inspect_response(response, page_url)
-                if inspection.detected:
-                    inspection.evidence["pages_crawled"] = len(visited)
-                    results.append(inspection)
-
-                if depth < max_depth:
-                    parser = _PageParser()
-                    parser.feed(response.text)
-                    for link in parser.links:
-                        candidate = self._safe_crawl_url(link, page_url, base, allowed_prefix)
-                        if candidate and candidate not in visited:
-                            queue.append((candidate, depth + 1))
-
-                if delay_seconds > 0 and queue:
-                    await asyncio.sleep(delay_seconds)
-
-        if results:
-            for result in results:
-                result.evidence["pages_crawled"] = len(visited)
-            return results
-
-        return [
-            DetectorResult(
-                detector=self.detector_id,
-                vulnerability="Cross-Site Request Forgery",
-                detected=False,
-                validation_status="NOT_DETECTED",
-                severity="MEDIUM",
-                confidence="LOW",
-                evidence={
-                    "reason": "No POST forms without a common CSRF-token field were found.",
-                    "pages_crawled": len(visited),
-                    "request_errors": request_errors,
-                },
-                remediation="Ensure state-changing requests use appropriate CSRF protection.",
-                cwe="CWE-352",
-                owasp_category="A01:2021 - Broken Access Control",
-            )
-        ]
-
-    def _client(self, context: ScanContext) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
-            timeout=context.timeout_seconds,
-            follow_redirects=True,
-            headers=context.extra.get("headers", {}),
-        )
-
-    def _inspect_response(self, response: httpx.Response, page_url: str) -> DetectorResult:
-        content_type = response.headers.get("content-type", "").lower()
-        if "html" not in content_type:
-            return DetectorResult(
-                detector=self.detector_id,
-                vulnerability="Cross-Site Request Forgery",
-                detected=False,
-                validation_status="NOT_DETECTED",
-                severity="MEDIUM",
-                confidence="LOW",
-                evidence={
-                    "reason": "Target response was not HTML.",
-                    "status_code": response.status_code,
-                    "content_type": content_type,
-                },
-                remediation="Ensure state-changing requests use appropriate CSRF protection.",
-                cwe="CWE-352",
-                owasp_category="A01:2021 - Broken Access Control",
+            return self._error_result(
+                context, cfg, f"Could not reach the target ({type(exc).__name__}: {exc})."
             )
 
-        parser = _PageParser()
-        parser.feed(response.text)
-        post_forms = [form for form in parser.forms if form["method"] == "POST"]
+    async def _authenticate(
+        self, client: httpx.AsyncClient, base: str, host: str, cfg: dict[str, Any]
+    ) -> None:
+        """Best-effort form login: GET the login page, resubmit its hidden
+        fields unchanged plus the given username/password. Only ever runs
+        when the caller (a lab preset or an explicit override) supplied
+        login_path/username/password."""
+        login_url = urljoin(base + "/", cfg["login_path"])
+        page = await client.get(login_url)
+        page.raise_for_status()
 
-        if not post_forms:
-            return DetectorResult(
-                detector=self.detector_id,
-                vulnerability="Cross-Site Request Forgery",
-                detected=False,
-                validation_status="NOT_DETECTED",
-                severity="MEDIUM",
-                confidence="LOW",
-                evidence={"reason": "No POST forms were found on the inspected page."},
-                remediation="Ensure state-changing requests use appropriate CSRF protection.",
-                cwe="CWE-352",
-                owasp_category="A01:2021 - Broken Access Control",
+        forms = parse_forms(page.text, str(page.url))
+        login_form = forms[0] if forms else None
+
+        data: dict[str, str] = {}
+        if login_form:
+            data.update({f.name: f.value for f in login_form.fields if f.type == "hidden"})
+        data[cfg.get("username_field", "username")] = cfg["username"]
+        data[cfg.get("password_field_login", "password")] = cfg["password"]
+        if cfg.get("login_submit_field"):
+            data[cfg["login_submit_field"]] = cfg.get("login_submit_value", "")
+
+        post_url = login_form.action if login_form else login_url
+        resp = await client.post(post_url, data=data)
+        final_url = str(resp.url)
+
+        if "setup.php" in final_url:
+            raise DetectorError(
+                "DVWA's database is not initialized. In your browser open DVWA's setup page "
+                "(e.g. http://localhost:8081/setup.php) and click 'Create / Reset Database', "
+                "then run the scan again."
+            )
+        if cfg["login_path"] in final_url or "login failed" in resp.text.lower():
+            raise DetectorError(
+                f"Login failed for user '{cfg['username']}' at {login_url}. Check the credentials."
             )
 
-        token_names = {
-            "csrf",
-            "csrf_token",
-            "csrftoken",
-            "_csrf",
-            "_csrf_token",
-            "xsrf",
-            "xsrf_token",
-            "authenticity_token",
-        }
-        vulnerable_form: dict[str, object] | None = None
-        for form in post_forms:
-            inputs = form["inputs"]
-            assert isinstance(inputs, list)
-            input_names = {str(item["name"]).lower() for item in inputs if item.get("name")}
-            if not input_names.intersection(token_names):
-                vulnerable_form = form
-                break
+        for name, value in cfg.get("post_login_cookies", {}).items():
+            client.cookies.set(name, value, domain=host, path="/")
 
-        if vulnerable_form is None:
-            return DetectorResult(
-                detector=self.detector_id,
-                vulnerability="Cross-Site Request Forgery",
-                detected=False,
-                validation_status="NOT_DETECTED",
-                severity="MEDIUM",
-                confidence="MEDIUM",
-                evidence={
-                    "forms_checked": len(post_forms),
-                    "reason": "POST forms included CSRF-token fields.",
-                },
-                remediation="Continue enforcing CSRF protection on all state-changing requests.",
-                cwe="CWE-352",
-                owasp_category="A01:2021 - Broken Access Control",
-            )
-
-        action = str(vulnerable_form["action"])
-        return DetectorResult(
-            detector=self.detector_id,
-            vulnerability="Cross-Site Request Forgery",
-            detected=True,
-            validation_status="SUSPECTED",
-            severity="MEDIUM",
-            confidence="MEDIUM",
-            endpoint=urljoin(page_url, action),
-            evidence={
-                "reason": "A POST form was found without a common CSRF-token field.",
-                "forms_checked": len(post_forms),
-                "form_action": action,
-                "page": page_url,
-            },
-            remediation=(
-                "Add a strong, unpredictable CSRF token to state-changing requests and "
-                "validate the token server-side. Also consider SameSite cookie protections."
-            ),
-            cwe="CWE-352",
-            owasp_category="A01:2021 - Broken Access Control",
-            cvss_score=6.5,
-        )
-
-    def _safe_crawl_url(
+    async def _resolve_form(
         self,
-        link: str,
-        page_url: str,
-        base: ParseResult,
-        allowed_prefix: str,
-    ) -> str | None:
-        candidate, _ = urldefrag(urljoin(page_url, link))
-        parsed = urlparse(candidate)
-        if parsed.scheme not in {"http", "https"} or parsed.netloc != base.netloc:
-            return None
-        if not parsed.path.startswith(allowed_prefix):
-            return None
-        blocked_segments = ("logout", "signout", "delete", "remove", "payment", "checkout")
-        if any(segment in parsed.path.lower() for segment in blocked_segments):
-            return None
-        return candidate
+        client: httpx.AsyncClient,
+        base: str,
+        discovery_path: str,
+        cfg: dict[str, Any],
+        source: str,
+    ) -> CandidateForm:
+        if cfg.get("action_path"):
+            url = urljoin(f"{base}/", cfg["action_path"].lstrip("/"))
+            page = await client.get(url)
+            page.raise_for_status()
+            forms = parse_forms(page.text, str(page.url))
+            method = cfg.get("method")
+            matched = next(
+                (f for f in forms if not method or f.method == method), forms[0] if forms else None
+            )
+            if matched is None:
+                raise DetectorError(f"No form was found at {url}.")
+            return self._build_candidate(matched, cfg, source)
 
-    def _error_result(self, error: str) -> DetectorResult:
+        url = urljoin(f"{base}/", discovery_path.lstrip("/"))
+        page = await client.get(url)
+        page.raise_for_status()
+        forms = parse_forms(page.text, str(page.url))
+        matched = next(
+            (f for f in forms if any(fld.type not in ("hidden", "submit") for fld in f.fields)),
+            None,
+        )
+        if matched is None:
+            raise DetectorError(
+                f"No state-changing form was found at {url}. Provide an explicit "
+                "'action_path' (and optionally 'method') in the target's scan configuration."
+            )
+        return self._build_candidate(matched, cfg, source)
+
+    def _build_candidate(self, form: FormSpec, cfg: dict[str, Any], source: str) -> CandidateForm:
+        hidden = {f.name: f.value for f in form.fields if f.type == "hidden"}
+        visible = {f.name: f.value for f in form.fields if f.type not in ("hidden", "submit")}
+        token_field = next((name for name in hidden if _TOKEN_NAME_RE.search(name)), None)
+        return CandidateForm(
+            url=form.action,
+            method=cfg.get("method", form.method),
+            fields=visible,
+            hidden_fields=hidden,
+            token_field=token_field,
+            source=source,
+        )
+
+    async def _check_token_session_binding(
+        self, client: httpx.AsyncClient, form: CandidateForm, cfg: dict[str, Any]
+    ) -> bool | None:
+        """Refetch the same form with a fresh, independent (cookie-less)
+        client and compare the token value. A mismatch proves the token is
+        session-bound; a match means it isn't real protection. Returns None
+        (not verified) when the comparison can't be made safely — e.g. the
+        page requires the authenticated session to even show the form."""
+        if form.token_field is None:
+            return None
+        original_value = form.hidden_fields.get(form.token_field)
+        if not original_value:
+            return None
+        try:
+            async with httpx.AsyncClient(
+                timeout=cfg["request_timeout"], follow_redirects=True
+            ) as fresh:
+                page = await fresh.get(form.url)
+                if page.status_code >= 400:
+                    return None
+                forms = parse_forms(page.text, str(page.url))
+        except httpx.HTTPError:
+            return None
+        matched = next((f for f in forms if f.action == form.url), forms[0] if forms else None)
+        if matched is None:
+            return None
+        fresh_value = next(
+            (f.value for f in matched.fields if f.name == form.token_field), None
+        )
+        if not fresh_value:
+            return None
+        return fresh_value != original_value
+
+    async def _attempt_forgery(
+        self, client: httpx.AsyncClient, form: CandidateForm, cfg: dict[str, Any]
+    ) -> tuple[bool, bool, dict[str, Any]]:
+        """Replay the state-changing request as a cross-site attacker page
+        would send it: the victim's session cookies are still attached
+        (that's the whole premise of CSRF), but the anti-CSRF token is
+        dropped and Origin/Referer point at an unrelated host."""
+        marker = secrets.token_hex(4)
+        forged_value = cfg.get("new_value", "vulnvista-csrf-{token}").format(token=marker)
+        pw_field = cfg["password_field"]
+        confirm_field = cfg.get("confirm_field")
+
+        data = {**form.fields, pw_field: forged_value}
+        if confirm_field:
+            data[confirm_field] = forged_value
+        if cfg.get("submit_field"):
+            data[cfg["submit_field"]] = cfg.get("submit_value", "")
+
+        headers = {"Origin": cfg["forged_origin"], "Referer": f"{cfg['forged_origin']}/"}
+        resp = await self._submit(client, form, data, headers)
+
+        success_indicator = cfg.get("success_indicator")
+        bypassed = (
+            success_indicator in resp.text if success_indicator else resp.status_code < 400
+        )
+
+        evidence = {
+            "forged_field": pw_field,
+            "forged_value": forged_value,
+            "forged_origin": cfg["forged_origin"],
+            "forged_response_status": resp.status_code,
+            "success_indicator_checked": success_indicator is not None,
+        }
+
+        if bypassed and cfg.get("reset_value") is not None:
+            await self._reset_state(client, form, cfg)
+
+        return True, bypassed, evidence
+
+    async def _reset_state(
+        self, client: httpx.AsyncClient, form: CandidateForm, cfg: dict[str, Any]
+    ) -> None:
+        """Restore the field to its known-good value using the authentic
+        (non-forged) session, so later scans/detectors depending on it (e.g.
+        the DVWA lab credential) keep working."""
+        pw_field = cfg["password_field"]
+        confirm_field = cfg.get("confirm_field")
+        reset_value = cfg["reset_value"]
+        data = {**form.fields, pw_field: reset_value}
+        if confirm_field:
+            data[confirm_field] = reset_value
+        if cfg.get("submit_field"):
+            data[cfg["submit_field"]] = cfg.get("submit_value", "")
+        try:
+            await self._submit(client, form, data, headers={})
+        except httpx.HTTPError:
+            pass
+
+    async def _submit(
+        self,
+        client: httpx.AsyncClient,
+        form: CandidateForm,
+        data: dict[str, str],
+        headers: dict[str, str],
+    ) -> httpx.Response:
+        if form.method == "GET":
+            return await client.get(form.url, params=data, headers=headers)
+        return await client.post(form.url, data=data, headers=headers)
+
+    def _result(
+        self, form: CandidateForm, decision: Decision, evidence: dict[str, Any]
+    ) -> DetectorResult:
+        summary = (
+            f"{decision.reason} (form {evidence['form_discovery']}, method={form.method}). "
+            f"token_field={evidence['token_field']}, active_check_performed="
+            f"{evidence['active_check_performed']}."
+        )
+        severity = (
+            "CRITICAL" if evidence["active_check_bypassed"]
+            else "HIGH" if decision.detected
+            else "INFO"
+        )
         return DetectorResult(
             detector=self.detector_id,
-            vulnerability="Cross-Site Request Forgery",
+            vulnerability=self.name,
+            detected=decision.detected,
+            validation_status=decision.validation_status,
+            severity=severity,
+            confidence=decision.confidence,
+            endpoint=form.url,
+            parameter=form.token_field,
+            description=(
+                "A state-changing operation can be triggered by a forged "
+                "cross-site request: the target either carries no anti-CSRF "
+                "token, accepts a token that is not bound to the victim's "
+                "session, or is reachable via a plain GET request — letting "
+                "an attacker-controlled page perform the action using the "
+                "victim's ambient session."
+            ),
+            evidence_summary=summary,
+            evidence=evidence,
+            remediation=(
+                "Require a per-session, unpredictable anti-CSRF token on "
+                "every state-changing request and reject requests where it "
+                "is missing or invalid. Restrict state-changing operations "
+                "to POST/PUT/DELETE (never GET), set the session cookie's "
+                "SameSite attribute to Lax or Strict, and validate the "
+                "Origin/Referer header as defense in depth."
+            ),
+            cwe=decision.cwe,
+            cvss_score=decision.cvss_score,
+            owasp_category="A01:2021 - Broken Access Control",
+        )
+
+    def _error_result(
+        self, context: ScanContext, cfg: dict[str, Any], message: str
+    ) -> DetectorResult:
+        parsed = urlparse(context.base_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        endpoint = (
+            urljoin(f"{base}/", cfg["action_path"].lstrip("/"))
+            if cfg.get("action_path")
+            else context.base_url
+        )
+        return DetectorResult(
+            detector=self.detector_id,
+            vulnerability=self.name,
             detected=False,
             validation_status="ERROR",
-            severity="MEDIUM",
+            severity="INFO",
             confidence="LOW",
-            evidence={"error": error},
-            remediation="Ensure state-changing requests use appropriate CSRF protection.",
+            endpoint=endpoint,
+            parameter=None,
+            description="Detector could not complete against the target.",
+            evidence_summary=f"Scan error: {message}",
+            evidence={"error": message},
             cwe="CWE-352",
             owasp_category="A01:2021 - Broken Access Control",
         )

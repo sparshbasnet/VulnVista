@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { api } from "../services/api";
 import type { User } from "../types";
 import { AuthContext } from "./context";
-const TOKEN_KEY = "vulnvista_access_token";
+import { UNAUTHORIZED_EVENT, clearToken, readToken, storeToken } from "./token";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -11,47 +11,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unauthorized = () => setUser(null);
-    window.addEventListener("vulnvista:unauthorized", unauthorized);
-    const token = sessionStorage.getItem(TOKEN_KEY);
-    if (!token) {
+    window.addEventListener(UNAUTHORIZED_EVENT, unauthorized);
+    if (!readToken()) {
       setLoading(false);
     } else {
-      api.me().then(setUser).catch(() => setUser(null)).finally(() => setLoading(false));
+      api
+        .me()
+        .then(setUser)
+        .catch(() => setUser(null))
+        .finally(() => setLoading(false));
     }
-    return () => window.removeEventListener("vulnvista:unauthorized", unauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, unauthorized);
   }, []);
 
-  async function login(username: string, password: string) {
+  const login = useCallback(async (username: string, password: string) => {
     const token = await api.login(username, password);
-    sessionStorage.setItem(TOKEN_KEY, token.access_token);
+    storeToken(token.access_token);
     try {
       setUser(await api.me());
     } catch (error) {
-      sessionStorage.removeItem(TOKEN_KEY);
+      clearToken();
       throw error;
     }
-  }
+  }, []);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     try {
       await api.logout();
     } finally {
-      sessionStorage.removeItem(TOKEN_KEY);
+      clearToken();
       setUser(null);
     }
-  }
+  }, []);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        login,
-        logout,
-        canOperate: user?.role === "ADMIN" || user?.role === "ANALYST",
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      // The server revokes every token the old password authorized, so it hands
+      // back a replacement to keep this tab signed in.
+      const token = await api.changePassword(currentPassword, newPassword);
+      storeToken(token.access_token);
+      setUser(await api.me());
+    },
+    [],
   );
+
+  const value = useMemo(
+    () => ({
+      user,
+      loading,
+      login,
+      logout,
+      changePassword,
+      canOperate: user?.role === "ADMIN" || user?.role === "ANALYST",
+      mustChangePassword: user?.must_change_password === true,
+    }),
+    [user, loading, login, logout, changePassword],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

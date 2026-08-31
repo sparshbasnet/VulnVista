@@ -1,0 +1,20 @@
+meta {
+  name: List Targets
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/targets
+  body: none
+  auth: bearer
+}
+
+headers {
+  Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhNDBmZWFmNi02NmM3LTQwZGMtODI1NC01NTIxZmQyNzI0N2MiLCJpYXQiOjE3ODY5NzAyMDUsImV4cCI6MTc4Njk3MjAwNSwidHlwZSI6ImFjY2VzcyJ9.T0Z144TC-WRAaktjkHPW5eP6BJODhKQ4dYVTyWbE9m0
+  content-type: application/json
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

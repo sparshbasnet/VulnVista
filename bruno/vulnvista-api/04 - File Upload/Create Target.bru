@@ -1,0 +1,48 @@
+meta {
+  name: Create Target
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/targets
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "name": "DVWA - File Upload",
+    "target_type": "webapp",
+    "base_url": "http://dvwa",
+    "environment": "lab",
+    "authorization_confirmed": true
+  }
+}
+
+script:post-response {
+  if (res.body && res.body.id) {
+    bru.setVar("uploadTargetId", res.body.id);
+  }
+}
+
+tests {
+  test("target created and allowed", function() {
+    expect(res.status).to.equal(201);
+    expect(res.body.id).to.be.a("string");
+    expect(res.body.is_allowed).to.equal(true);
+  });
+}
+
+docs {
+  Tests upload extension/MIME validation with harmless canaries on the DVWA lab preset.
+
+  Run "Login" in the Auth folder first so {{accessToken}} is set. Bundled
+  lab hosts (http://dvwa) are auto-approved (is_allowed=true) with no
+  authorization_confirmed acknowledgment needed; it's sent here anyway so this
+  same request works unmodified against any other host you point base_url at.
+}

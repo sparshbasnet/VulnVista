@@ -321,6 +321,7 @@ class WeakTLSDetector(BaseDetector):
     detector_id = "weak_tls"
     name = "Weak TLS Configuration"
     vulnerability_type = "weak_tls"
+    scan_scope = "host"
     supported_targets = ["host", "webapp"]
 
     async def check(self, context: ScanContext) -> DetectorResult:
