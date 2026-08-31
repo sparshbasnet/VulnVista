@@ -1,0 +1,15 @@
+meta {
+  name: List Scans
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/scans
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

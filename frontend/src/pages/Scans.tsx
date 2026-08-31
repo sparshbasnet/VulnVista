@@ -3,9 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import FindingCard from "../components/FindingCard";
 import PageHeader from "../components/PageHeader";
+import ScopeTree from "../components/ScopeTree";
 import { useAppData } from "../hooks/useAppData";
+import { downloadFindingsReport } from "../lib/report";
+import type { ReportFormat } from "../lib/report";
 import { api } from "../services/api";
-import type { Finding, Scan } from "../types";
+import type { Discovery, Finding, Scan, Target } from "../types";
 import { useAuth } from "../auth/useAuth";
 
 const TERMINAL: Scan["status"][] = ["COMPLETED", "PARTIAL", "FAILED", "CANCELLED"];
@@ -14,13 +17,6 @@ const POLL_INTERVAL_MS = 1500;
 // a 15-minute internal ceiling against a busy target) plus per-service NVD/searchsploit
 // lookups afterward — the other profiles finish in seconds regardless of this ceiling.
 const MAX_POLLS = 800;
-const ZAP_SUPPORTED_PROFILES = new Set<ProfileId>([
-  "csrf",
-  "path_traversal",
-  "jwt_session",
-  "file_upload",
-  "misconfiguration",
-]);
 
 type PhaseState = "active" | "done" | "error";
 interface Phase {
@@ -28,21 +24,22 @@ interface Phase {
   state: PhaseState;
 }
 type ProfileId =
-  | "sqli_detector"
+  | "all"
   | "command_injection"
+  | "sql_injection"
   | "xss"
-  | "csrf"
+  | "file_upload"
   | "path_traversal"
-  | "idor"
-  | "jwt_session"
   | "weak_auth"
   | "sensitive_files"
-  | "vulnerable_services"
-  | "file_upload"
   | "misconfiguration"
   | "ssrf"
-  | "xxe"
-  | "weak_tls";
+  | "idor"
+  | "jwt_session"
+  | "vulnerable_services"
+  | "weak_tls"
+  | "csrf"
+  | "xxe";
 interface ProfileConfig {
   label: string;
   targetType: string;
@@ -54,16 +51,18 @@ interface ProfileConfig {
 }
 
 const PROFILES: Record<ProfileId, ProfileConfig> = {
-  sqli_detector: {
-    label: "SQL Injection (ZAP)",
-    targetType: "juice-shop",
-    defaultUrl: "http://juice-shop:3000",
-    buttonLabel: "Scan for SQL injection",
-    scanningLabel: "Running the focused ZAP SQL-injection rules…",
-    noFindingLabel: "No SQL injection detected on this target",
+  all: {
+    label: "All Detectors",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for all vulnerabilities",
+    scanningLabel: "Running the full detector suite…",
+    noFindingLabel: "No vulnerabilities detected on this target",
     help:
-      "Seeds the authorized JSON login endpoint and runs only ZAP's SQL-injection rules. " +
-      "The bundled Juice Shop path works by default; use Advanced to override the login path.",
+      "Runs every detector against the target. Each detector self-discovers its own " +
+      "inputs and confirms findings independently. Select a specific detector above to " +
+      "scan for a single vulnerability class instead. http://dvwa is a bundled lab target " +
+      "requiring no setup.",
   },
   command_injection: {
     label: "Command Injection",
@@ -78,86 +77,147 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "and time-based signals. Use Advanced below for a login, a session cookie, or an exact " +
       "parameter to target. http://dvwa is a bundled lab target requiring no setup.",
   },
+  sql_injection: {
+    label: "SQL Injection",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for SQL injection",
+    scanningLabel: "Discovering injection points & probing…",
+    noFindingLabel: "No SQL injection detected on this target",
+    help:
+      "Works against any target: paste its URL and the scanner auto-discovers a form field " +
+      "or query parameter to probe, then confirms SQL injection with an error-signature, " +
+      "boolean-blind, and time-blind signal. Use Advanced below for a login, a session " +
+      "cookie, or an exact parameter to target. http://dvwa and http://juice-shop:3000 are " +
+      "bundled lab targets requiring no setup — Juice Shop's product search endpoint is " +
+      "probed automatically.",
+  },
   xss: {
     label: "Cross-Site Scripting (XSS)",
     targetType: "webapp",
     defaultUrl: "http://dvwa",
     buttonLabel: "Scan for XSS",
-    scanningLabel: "Submitting a harmless canary and validating it in Chromium…",
-    noFindingLabel: "No browser-confirmed XSS detected on this target",
+    scanningLabel: "Discovering inputs & validating execution in Chromium…",
+    noFindingLabel: "No browser-executable XSS detected on this target",
     help:
-      "Uses a harmless DOM canary and records a finding only when Chromium confirms script " +
-      "execution. DVWA and Juice Shop have lab presets; other apps can use Advanced inputs.",
+      "Works against any target with discoverable form fields or query parameters. The " +
+      "scanner submits a unique harmless canary and confirms a finding only when Chromium " +
+      "observes it execute and modify the page DOM—reflection alone is not reported as XSS. " +
+      "Use Advanced for authenticated targets or an exact input. http://dvwa uses the bundled " +
+      "reflected-XSS lab preset automatically.",
   },
-  csrf: {
-    label: "Cross-Site Request Forgery (CSRF)",
+  file_upload: {
+    label: "Unrestricted File Upload",
     targetType: "webapp",
     defaultUrl: "http://dvwa",
-    buttonLabel: "Scan for CSRF controls",
-    scanningLabel: "Inspecting forms for CSRF protection…",
-    noFindingLabel: "No missing CSRF controls detected on this target",
+    buttonLabel: "Scan file-upload controls",
+    scanningLabel: "Testing extension/MIME validation & public retrieval…",
+    noFindingLabel: "No unrestricted file upload detected on this target",
     help:
-      "Inspects the target’s HTML forms for common CSRF-token fields. The bundled DVWA lab " +
-      "is selected by default; use only an authorized target.",
+      "Tests upload handling with harmless plain-text canaries. One canary uses a .php " +
+      "filename but contains no PHP tags or executable code. A critical finding is confirmed " +
+      "only when that exact marker is accepted and publicly retrievable. The bundled DVWA " +
+      "target provides the upload endpoint and public path automatically.",
   },
   path_traversal: {
-    label: "Path Traversal (DVWA / Juice Shop)",
+    label: "Path Traversal / File Inclusion",
     targetType: "webapp",
     defaultUrl: "http://dvwa",
     buttonLabel: "Scan for path traversal",
-    scanningLabel: "Probing the safe path-traversal check…",
+    scanningLabel: "Submitting controlled canary traversal variants…",
     noFindingLabel: "No path traversal detected on this target",
     help:
-      "Uses a target-specific safe probe against the bundled DVWA or Juice Shop lab and " +
-      "records confirmed evidence only when the expected lab marker is returned.",
-  },
-  jwt_session: {
-    label: "JWT / Session Security",
-    targetType: "webapp",
-    defaultUrl: "http://juice-shop:3000",
-    buttonLabel: "Inspect JWT and session controls",
-    scanningLabel: "Inspecting token metadata and session-cookie controls…",
-    noFindingLabel: "No JWT or session weakness detected from the supplied authentication state",
-    help:
-      "Passively checks a JWT supplied as a cookie, or authentication cookies returned by " +
-      "the target, for unsigned tokens, excessive lifetime, and missing Secure, HttpOnly, or " +
-      "SameSite protections. Add an authenticated cookie under Advanced for protected apps.",
-  },
-  idor: {
-    label: "Broken Access Control / IDOR",
-    targetType: "juice-shop",
-    defaultUrl: "http://juice-shop:3000",
-    buttonLabel: "Test object-level authorization",
-    scanningLabel: "Comparing read-only access across two synthetic accounts…",
-    noFindingLabel: "No cross-account object access detected",
-    help:
-      "Creates or reuses two synthetic Juice Shop lab accounts, reads each account's own " +
-      "basket, then verifies whether one account can read the other's basket. No records are modified.",
+      "Confirms path traversal only by retrieving a harmless controlled canary outside the " +
+      "intended content directory. It never requests /etc/passwd, environment files, or other " +
+      "real system data. The bundled DVWA target includes the canary and endpoint preset. For " +
+      "another authorized target, configure its canary path, exact marker, endpoint, and " +
+      "parameter under Advanced.",
   },
   weak_auth: {
-    label: "Weak Authentication (Juice Shop)",
-    targetType: "juice-shop",
+    label: "Weak Authentication",
+    targetType: "webapp",
     defaultUrl: "http://juice-shop:3000",
     buttonLabel: "Scan for weak authentication",
     scanningLabel: "Probing authentication endpoints…",
     noFindingLabel: "No weak authentication controls detected on this target",
     help:
-      "Enter the target as the backend reaches it on the lab network — e.g. " +
-      "http://juice-shop:3000. The scanner checks the seeded admin account for username " +
-      "enumeration via the password-reset flow and for missing login rate limiting/lockout.",
+      "Works against any target with a login form: paste its URL and the scanner " +
+      "auto-discovers the login form, then checks for missing login rate limiting/lockout. " +
+      "Provide a known valid username/email in Advanced to also check for account-" +
+      "enumeration oracles (skipped otherwise, since a valid account can't be discovered " +
+      "safely). http://juice-shop:3000 is a bundled lab target requiring no setup.",
   },
   sensitive_files: {
-    label: "Sensitive File Exposure (Juice Shop)",
-    targetType: "juice-shop",
+    label: "Sensitive File Exposure",
+    targetType: "webapp",
     defaultUrl: "http://juice-shop:3000",
     buttonLabel: "Scan for exposed sensitive files",
     scanningLabel: "Checking for exposed backups, config, and metadata…",
     noFindingLabel: "No sensitive files exposed on this target",
     help:
-      "Enter the target as the backend reaches it on the lab network — e.g. " +
-      "http://juice-shop:3000. The scanner checks for directly retrievable backup files, " +
-      "configuration files, repository metadata, source maps, and internal documents, " +
-      "confirming each against a baseline so the app's fallback page isn't mistaken for a hit.",
+      "Works against any target: paste its URL and the scanner checks a generic set of " +
+      "well-known backup, environment/config, credential-store, source-map, log, and " +
+      "repository-metadata paths (.git, .env, *.js.map, and more), confirming each against " +
+      "a baseline so the app's fallback page isn't mistaken for a hit. " +
+      "http://juice-shop:3000 is a bundled lab target requiring no setup.",
+  },
+  misconfiguration: {
+    label: "Security Misconfiguration",
+    targetType: "webapp",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan configuration controls",
+    scanningLabel: "Inspecting headers, cookies, listings, errors, and diagnostics…",
+    noFindingLabel: "No defined security misconfiguration detected on this target",
+    help:
+      "Uses read-only HTTP requests to check security headers, session-cookie attributes, " +
+      "directory indexes, default server pages, verbose errors, and exposed diagnostic or " +
+      "management endpoints. Each weakness keeps separate evidence and informational signals " +
+      "are never promoted to high severity.",
+  },
+  ssrf: {
+    label: "Server-Side Request Forgery (SSRF)",
+    targetType: "webapp",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan for SSRF",
+    scanningLabel: "Submitting a controlled URL & waiting for its callback…",
+    noFindingLabel: "No attributable server-side callback was observed",
+    help:
+      "Confirms SSRF only when the target requests a unique URL served by VulnVista's own " +
+      "temporary callback listener. It never probes cloud metadata, loopback, private " +
+      "services, or third-party hosts. The bundled Juice Shop preset authenticates, checks " +
+      "its profile-image URL importer, and restores the original image setting afterward.",
+  },
+  idor: {
+    label: "Broken Access Control / IDOR",
+    targetType: "webapp",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan for broken access control",
+    scanningLabel: "Signing in as two accounts & comparing object access…",
+    noFindingLabel: "No broken object-level access control detected on this target",
+    help:
+      "Signs in as two separate accounts and checks whether the first can read an object " +
+      "owned by the second. Every request is read-only — nothing is modified or deleted — " +
+      "and a finding is confirmed only when the data returned is provably the second " +
+      "account's. The bundled Juice Shop preset provisions two synthetic @lab.invalid " +
+      "accounts and compares their baskets. For another authorized target, supply the two " +
+      "accounts and its owner-scoped object path under Advanced.",
+  },
+  jwt_session: {
+    label: "JWT / Session Weaknesses",
+    targetType: "webapp",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan JWT / session handling",
+    scanningLabel: "Signing in, parsing the token & submitting forged tokens…",
+    noFindingLabel: "No JWT or session token weakness detected on this target",
+    help:
+      "Signs in with a synthetic account to obtain a real session token, parses its claims " +
+      "(never verifying or replaying it), then submits tokens a correct server must reject — " +
+      "an unsigned alg:none token and one with an invalidated signature — each carrying a " +
+      "tampered identity. A finding is confirmed only when a forged token is accepted as a " +
+      "session; sensitive claims are masked in the evidence. The bundled Juice Shop preset " +
+      "provisions one @lab.invalid account and checks its whoami session. For another " +
+      "authorized target, configure its login, session-check endpoint, and claim mapping " +
+      "under Advanced.",
   },
   vulnerable_services: {
     label: "Vulnerable Services (Metasploitable2)",
@@ -173,52 +233,6 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "unauthenticated VNC). Only version fingerprints are used as proof — nothing is ever " +
       "exploited on the target. Can take a couple of minutes since it's a real port scan.",
   },
-  file_upload: {
-    label: "Unrestricted File Upload (DVWA)",
-    targetType: "webapp",
-    defaultUrl: "http://dvwa",
-    buttonLabel: "Inspect file-upload controls",
-    scanningLabel: "Signing in and inspecting file-upload restrictions…",
-    noFindingLabel: "No unrestricted file-upload control detected on this target",
-    help:
-      "For the bundled DVWA lab, the scanner signs in with its seeded lab account and " +
-      "inspects the upload form for browser-visible type restrictions. It does not upload " +
-      "or execute a file. Use a session cookie in Advanced for another authorized app.",
-  },
-  misconfiguration: {
-    label: "Security Misconfiguration",
-    targetType: "webapp",
-    defaultUrl: "http://juice-shop:3000",
-    buttonLabel: "Check security configuration",
-    scanningLabel: "Checking security headers, CORS, and version disclosure…",
-    noFindingLabel: "No tested security misconfiguration detected on this target",
-    help:
-      "Uses safe GET and CORS preflight requests to verify browser security headers, HTTPS " +
-      "transport policy, cross-origin access, and server version disclosure. No files, " +
-      "credentials, or application state are modified.",
-  },
-  ssrf: {
-    label: "Server-Side Request Forgery (SSRF)",
-    targetType: "juice-shop",
-    defaultUrl: "http://juice-shop:3000",
-    buttonLabel: "Test server-side URL fetching",
-    scanningLabel: "Waiting for the controlled local callback…",
-    noFindingLabel: "No controlled SSRF callback received",
-    help:
-      "Supplies Juice Shop's image importer with a unique callback URL hosted by the backend. " +
-      "It never requests cloud metadata, loopback services, or third-party systems.",
-  },
-  xxe: {
-    label: "XML External Entity (XXE)",
-    targetType: "juice-shop",
-    defaultUrl: "http://juice-shop:3000",
-    buttonLabel: "Test XML entity handling",
-    scanningLabel: "Submitting controlled external-entity probes…",
-    noFindingLabel: "No external entity resolution detected",
-    help:
-      "Uses a local callback and the non-sensitive /etc/os-release marker to prove entity " +
-      "resolution. The Juice Shop B2B upload endpoint is selected by its lab preset.",
-  },
   weak_tls: {
     label: "Weak TLS Configuration",
     targetType: "host",
@@ -233,6 +247,35 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "protocols (SSLv2/3, TLSv1.0/1.1), weak cipher suites (NULL/EXPORT/RC4/DES/MD5), " +
       "certificate issues (self-signed, expired, weak signature/key), and known TLS flaws " +
       "(Heartbleed, ROBOT, CCS injection) — every check is a passive protocol probe.",
+  },
+  csrf: {
+    label: "Cross-Site Request Forgery",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for CSRF",
+    scanningLabel: "Inspecting anti-CSRF tokens & attempting a forged request…",
+    noFindingLabel: "No CSRF weakness detected on this target",
+    help:
+      "Works against any target: paste its URL and the scanner discovers a state-changing " +
+      "form, checks whether it carries a real, session-bound anti-CSRF token, and — when a " +
+      "known-safe/resettable action is configured (as the bundled DVWA lab is) — replays it " +
+      "with the token dropped and the Origin/Referer spoofed to prove forgeability, then " +
+      "restores the original state. http://dvwa is a bundled lab target requiring no setup.",
+  },
+  xxe: {
+    label: "XML External Entity (XXE)",
+    targetType: "webapp",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan for XXE",
+    scanningLabel: "Submitting a canary XML payload & waiting for a callback…",
+    noFindingLabel: "No XML external entity processing detected on this target",
+    help:
+      "There's no generic way to auto-discover an XML-accepting endpoint, so this needs " +
+      "either the bundled Juice Shop lab target (its B2B order API is used automatically, " +
+      "zero setup) or an explicit XML endpoint path in Advanced below. The scanner submits a " +
+      "document declaring an external entity that points at a canary listener it hosts itself " +
+      "and checks whether the target's parser actually fetches it — it never reads local files " +
+      "or real data on the target.",
   },
 };
 
@@ -276,6 +319,7 @@ export default function Scans() {
   const { targets: registeredTargets, refresh, replaceFinding } = useAppData();
   const [scans, setScans] = useState<Scan[]>([]);
   const [profile, setProfile] = useState<ProfileId>("command_injection");
+  const [reportFormat, setReportFormat] = useState<ReportFormat>("csv");
   const [url, setUrl] = useState(PROFILES.command_injection.defaultUrl);
   const [name, setName] = useState("");
   const [authorized, setAuthorized] = useState(false);
@@ -284,14 +328,43 @@ export default function Scans() {
   const [advUsername, setAdvUsername] = useState("");
   const [advPassword, setAdvPassword] = useState("");
   const [advLoginPath, setAdvLoginPath] = useState("");
+  const [advKnownUsername, setAdvKnownUsername] = useState("");
+  const [advUseZap, setAdvUseZap] = useState(false);
   const [advCookie, setAdvCookie] = useState("");
   const [advParameter, setAdvParameter] = useState("");
   const [advPath, setAdvPath] = useState("");
-  const [useZap, setUseZap] = useState(false);
+  const [advXmlEndpoint, setAdvXmlEndpoint] = useState("");
+  const [advCanaryPath, setAdvCanaryPath] = useState("");
+  const [advCanaryMarker, setAdvCanaryMarker] = useState("");
+  const [advUploadPath, setAdvUploadPath] = useState("");
+  const [advFileField, setAdvFileField] = useState("");
+  const [advPublicBasePath, setAdvPublicBasePath] = useState("");
+  const [advDirectoryPaths, setAdvDirectoryPaths] = useState("");
+  const [advDiagnosticPaths, setAdvDiagnosticPaths] = useState("");
+  const [advSsrfEndpoint, setAdvSsrfEndpoint] = useState("");
+  const [advSsrfParameter, setAdvSsrfParameter] = useState("");
+  const [advSsrfRequestStyle, setAdvSsrfRequestStyle] = useState("form");
+  const [advIdorUserA, setAdvIdorUserA] = useState("");
+  const [advIdorPassA, setAdvIdorPassA] = useState("");
+  const [advIdorUserB, setAdvIdorUserB] = useState("");
+  const [advIdorPassB, setAdvIdorPassB] = useState("");
+  const [advIdorObjectTemplate, setAdvIdorObjectTemplate] = useState("");
+  const [advIdorOwnerMarker, setAdvIdorOwnerMarker] = useState("");
+  const [advJwtSessionPath, setAdvJwtSessionPath] = useState("");
+  const [advJwtMarkerPath, setAdvJwtMarkerPath] = useState("");
+  const [advJwtClaimPath, setAdvJwtClaimPath] = useState("");
+  const [advJwtSubmission, setAdvJwtSubmission] = useState("header");
+  const [advJwtCookieName, setAdvJwtCookieName] = useState("");
   const [busy, setBusy] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [findings, setFindings] = useState<Finding[] | null>(null);
+  // Discovery / scope selection. When a discovery has been run, its target is
+  // reused for the scan and only the checked paths are attacked (scope mode).
+  const [discovery, setDiscovery] = useState<Discovery | null>(null);
+  const [discoveredTarget, setDiscoveredTarget] = useState<Target | null>(null);
+  const [inScope, setInScope] = useState<Set<string>>(new Set());
+  const [discovering, setDiscovering] = useState(false);
   const cancelled = useRef(false);
 
   useEffect(() => {
@@ -317,23 +390,57 @@ export default function Scans() {
     setAdvUsername("");
     setAdvPassword("");
     setAdvLoginPath("");
+    setAdvKnownUsername("");
+    setAdvUseZap(false);
     setAdvCookie("");
     setAdvParameter("");
     setAdvPath("");
+    setAdvXmlEndpoint("");
+    setAdvCanaryPath("");
+    setAdvCanaryMarker("");
+    setAdvUploadPath("");
+    setAdvFileField("");
+    setAdvPublicBasePath("");
+    setAdvDirectoryPaths("");
+    setAdvDiagnosticPaths("");
+    setAdvSsrfEndpoint("");
+    setAdvSsrfParameter("");
+    setAdvSsrfRequestStyle("form");
+    setAdvIdorUserA("");
+    setAdvIdorPassA("");
+    setAdvIdorUserB("");
+    setAdvIdorPassB("");
+    setAdvIdorObjectTemplate("");
+    setAdvIdorOwnerMarker("");
+    setAdvJwtSessionPath("");
+    setAdvJwtMarkerPath("");
+    setAdvJwtClaimPath("");
+    setAdvJwtSubmission("header");
+    setAdvJwtCookieName("");
+  }
+
+  function resetDiscovery() {
+    setDiscovery(null);
+    setDiscoveredTarget(null);
+    setInScope(new Set());
   }
 
   function selectProfile(next: ProfileId) {
     // Only clobber the URL if it's still the previous profile's default —
     // preserves whatever the user typed themselves.
-    if (url === PROFILES[profile].defaultUrl) {
-      setUrl(PROFILES[next].defaultUrl);
-    }
+    const nextUrl = url === PROFILES[profile].defaultUrl ? PROFILES[next].defaultUrl : url;
     setProfile(next);
-    if (!ZAP_SUPPORTED_PROFILES.has(next)) setUseZap(false);
+    // Which detector runs doesn't change what was crawled, and most profiles
+    // share a default URL (every DVWA one is http://dvwa), so switching
+    // detectors used to silently discard a discovery of the very same target.
+    // Only tear down the crawl-derived state when the switch actually retargets.
+    if (nextUrl === url) return;
+    setUrl(nextUrl);
     setSelectedTargetId("NEW");
     setAuthorized(false);
     setAuthorizationScope("");
     clearAdvancedOverrides();
+    resetDiscovery();
   }
 
   function updateUrl(next: string) {
@@ -342,6 +449,7 @@ export default function Scans() {
     setAuthorized(false);
     setAuthorizationScope("");
     clearAdvancedOverrides();
+    resetDiscovery();
   }
 
   function chooseRegisteredTarget(id: string) {
@@ -354,11 +462,184 @@ export default function Scans() {
     setAuthorized(false);
     setAuthorizationScope("");
     clearAdvancedOverrides();
+    resetDiscovery();
   }
 
   function acknowledgeAuthorization(checked: boolean) {
     setAuthorized(checked);
     setAuthorizationScope(checked ? url.trim() : "");
+  }
+
+  // Collects the per-target detector overrides (login, cookies, explicit
+  // parameter/path, etc.) from the Advanced fields. Shared by discovery (so the
+  // crawler can log in) and the scan itself.
+  function buildScanConfig(): Record<string, unknown> {
+    const scanConfig: Record<string, unknown> = {};
+    if (advUsername.trim() && advPassword.trim()) {
+      scanConfig.username = advUsername.trim();
+      scanConfig.password = advPassword.trim();
+    }
+    if (advLoginPath.trim()) scanConfig.login_path = advLoginPath.trim();
+    if (advKnownUsername.trim()) scanConfig.known_username = advKnownUsername.trim();
+    if ((profile === "sql_injection" || profile === "command_injection") && advUseZap)
+      scanConfig.use_zap = true;
+    if (advCookie.trim()) scanConfig.cookies = parseCookieHeader(advCookie.trim());
+    if (advParameter.trim()) scanConfig.parameter = advParameter.trim();
+    if (advPath.trim()) {
+      if (/^https?:\/\//i.test(advPath.trim())) scanConfig.injection_url = advPath.trim();
+      else if (profile === "sql_injection") scanConfig.injection_path = advPath.trim();
+      else scanConfig.exec_path = advPath.trim();
+    }
+    if (advXmlEndpoint.trim()) scanConfig.xml_endpoint = advXmlEndpoint.trim();
+    if (advCanaryPath.trim()) scanConfig.canary_path = advCanaryPath.trim();
+    if (advCanaryMarker.trim()) scanConfig.canary_marker = advCanaryMarker.trim();
+    if (advUploadPath.trim()) {
+      if (/^https?:\/\//i.test(advUploadPath.trim())) scanConfig.upload_url = advUploadPath.trim();
+      else scanConfig.upload_path = advUploadPath.trim();
+    }
+    if (advFileField.trim()) scanConfig.file_field = advFileField.trim();
+    if (advPublicBasePath.trim()) scanConfig.public_base_path = advPublicBasePath.trim();
+    if (advDirectoryPaths.trim()) {
+      scanConfig.directory_paths = advDirectoryPaths.split(",").map((path) => path.trim()).filter(Boolean);
+    }
+    if (advDiagnosticPaths.trim()) {
+      scanConfig.diagnostic_paths = advDiagnosticPaths.split(",").map((path) => path.trim()).filter(Boolean);
+    }
+    if (advSsrfEndpoint.trim()) scanConfig.ssrf_endpoint = advSsrfEndpoint.trim();
+    if (advSsrfParameter.trim()) scanConfig.parameter = advSsrfParameter.trim();
+    if (profile === "ssrf") {
+      scanConfig.request_style = advSsrfRequestStyle;
+      scanConfig.request_method = advSsrfRequestStyle === "query" ? "GET" : "POST";
+    }
+    if (advIdorUserA.trim() && advIdorPassA.trim()) {
+      scanConfig.user_a_username = advIdorUserA.trim();
+      scanConfig.user_a_password = advIdorPassA.trim();
+    }
+    if (advIdorUserB.trim() && advIdorPassB.trim()) {
+      scanConfig.user_b_username = advIdorUserB.trim();
+      scanConfig.user_b_password = advIdorPassB.trim();
+    }
+    if (advIdorObjectTemplate.trim()) scanConfig.object_path_template = advIdorObjectTemplate.trim();
+    if (advIdorOwnerMarker.trim()) scanConfig.owner_marker_json_path = advIdorOwnerMarker.trim();
+    if (advJwtSessionPath.trim()) scanConfig.session_check_path = advJwtSessionPath.trim();
+    if (advJwtMarkerPath.trim()) scanConfig.session_marker_json_path = advJwtMarkerPath.trim();
+    if (advJwtClaimPath.trim()) scanConfig.tamper_claim_path = advJwtClaimPath.trim();
+    if (profile === "jwt_session") {
+      scanConfig.token_submission = advJwtSubmission;
+      if (advJwtSubmission === "cookie" && advJwtCookieName.trim()) {
+        scanConfig.token_cookie = advJwtCookieName.trim();
+      }
+    }
+    return scanConfig;
+  }
+
+  // Ensures a Target record exists for the current URL (creating one with the
+  // Advanced scan config if needed) and confirms it is approved for scanning.
+  // Returns the Target, or throws with a user-facing message.
+  async function ensureAuthorizedTarget(
+    scanConfig: Record<string, unknown>,
+    begin: (label: string) => number,
+    finish: (i: number, state: PhaseState, label?: string) => void,
+  ): Promise<Target> {
+    const cfg = PROFILES[profile];
+    const existingTarget = selectedTargetId === "NEW"
+      ? undefined
+      : registeredTargets.find((candidate) => candidate.id === selectedTargetId);
+    const labTrusted = isTrustedHost(url);
+
+    const p1 = begin(existingTarget ? `Using target ${existingTarget.name}…` : `Registering target ${url.trim()}…`);
+    const target = existingTarget ?? await api.createTarget({
+        name: name.trim() || url.trim(),
+        target_type: cfg.targetType,
+        base_url: url.trim(),
+        environment: "lab",
+        authorization_confirmed: authorized && authorizationScope === url.trim(),
+        ...(Object.keys(scanConfig).length > 0 ? { scan_config: scanConfig } : {}),
+      });
+    finish(p1, "done", existingTarget ? `Target reused: ${target.name}` : `Target ready: ${target.name}`);
+
+    const p2 = begin("Checking authorization…");
+    if (!target.is_allowed) {
+      finish(p2, "error", `${url} is not approved for scanning`);
+      throw new Error(
+        labTrusted
+          ? `${url} could not be approved automatically — please try again.`
+          : `${url} isn't a recognized lab host and no authorization was confirmed. Check ` +
+            `"I have authorization to test this target" above and try again.`,
+      );
+    }
+    finish(
+      p2,
+      "done",
+      labTrusted
+        ? existingTarget ? "Trusted lab target reused ✓" : "Trusted lab host ✓"
+        : existingTarget ? "Authorized target reused ✓" : "Authorized by you ✓",
+    );
+    return target;
+  }
+
+  // Crawls the target and populates the scope tree. The discovered target is
+  // reused by the subsequent scan so we never register it twice.
+  async function runDiscovery() {
+    setDiscovering(true);
+    setError(null);
+    resetDiscovery();
+    setFindings(null);
+
+    const list: Phase[] = [];
+    const render = () => setPhases([...list]);
+    const begin = (label: string) => {
+      list.push({ label, state: "active" });
+      render();
+      return list.length - 1;
+    };
+    const finish = (i: number, state: PhaseState, label?: string) => {
+      list[i] = { label: label ?? list[i].label, state };
+      render();
+    };
+    const relabel = (i: number, label: string) => {
+      list[i] = { ...list[i], label };
+      render();
+    };
+    setPhases([]);
+
+    try {
+      const scanConfig = buildScanConfig();
+      const target = await ensureAuthorizedTarget(scanConfig, begin, finish);
+      setDiscoveredTarget(target);
+
+      const p3 = begin("Crawling target for paths…");
+      let current = await api.createDiscovery({ target_id: target.id });
+      const started = Date.now();
+      let polls = 0;
+      while (current.status !== "COMPLETED" && current.status !== "FAILED") {
+        if (cancelled.current) return;
+        if (polls++ >= MAX_POLLS) {
+          finish(p3, "error", "Timed out waiting for discovery to finish");
+          throw new Error("Timed out waiting for discovery to finish.");
+        }
+        const secs = Math.round((Date.now() - started) / 1000);
+        relabel(p3, `Crawling… ${current.status.toLowerCase()} (${secs}s elapsed)`);
+        await sleep(POLL_INTERVAL_MS);
+        current = await api.getDiscovery(current.id);
+      }
+
+      if (current.status === "FAILED") {
+        finish(p3, "error", "Discovery failed");
+        throw new Error(current.error_summary ?? "Discovery failed.");
+      }
+
+      const paths = current.paths ?? [];
+      finish(p3, "done", `Discovered ${paths.length} path(s)`);
+      setDiscovery(current);
+      // Everything in scope by default; the operator narrows from there.
+      setInScope(new Set(paths.map((entry) => entry.path)));
+      begin("Select in-scope paths above, then start the scan");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDiscovering(false);
+    }
   }
 
   async function startScan(event: FormEvent) {
@@ -387,63 +668,38 @@ export default function Scans() {
 
     setPhases([]);
     const cfg = PROFILES[profile];
-    const existingTarget = selectedTargetId === "NEW"
-      ? undefined
-      : registeredTargets.find((candidate) => candidate.id === selectedTargetId);
-    const labTrusted = isTrustedHost(url);
+    // Scope mode: a discovery has been run, so reuse its target and attack only
+    // the checked paths — with every detector when "All Detectors" is selected,
+    // otherwise with just the chosen detector. Without a discovery we fall back to
+    // the classic single-target scan that lets each detector self-discover.
+    const allDiscovered = (discovery?.paths ?? []).map((entry) => entry.path);
+    const scopeMode = Boolean(discovery && discoveredTarget && allDiscovered.length > 0);
+    const inScopePaths = allDiscovered.filter((path) => inScope.has(path));
+    const outOfScopePaths = allDiscovered.filter((path) => !inScope.has(path));
     try {
-      const scanConfig: Record<string, unknown> = {};
-      if (advUsername.trim() && advPassword.trim()) {
-        scanConfig.username = advUsername.trim();
-        scanConfig.password = advPassword.trim();
-        if (advLoginPath.trim()) scanConfig.login_path = advLoginPath.trim();
-      }
-      if (advCookie.trim()) scanConfig.cookies = parseCookieHeader(advCookie.trim());
-      if (advParameter.trim()) scanConfig.parameter = advParameter.trim();
-      if (advPath.trim()) {
-        if (/^https?:\/\//i.test(advPath.trim())) scanConfig.injection_url = advPath.trim();
-        else scanConfig.exec_path = advPath.trim();
+      if (scopeMode && inScopePaths.length === 0) {
+        throw new Error("Select at least one in-scope path before starting the scan.");
       }
 
-      const p1 = begin(existingTarget ? `Using target ${existingTarget.name}…` : `Registering target ${url.trim()}…`);
-      const target = existingTarget ?? await api.createTarget({
-          name: name.trim() || url.trim(),
-          target_type: cfg.targetType,
-          base_url: url.trim(),
-          environment: "lab",
-          authorization_confirmed: authorized && authorizationScope === url.trim(),
-          ...(Object.keys(scanConfig).length > 0 ? { scan_config: scanConfig } : {}),
-        });
-      finish(p1, "done", existingTarget ? `Target reused: ${target.name}` : `Target registered: ${target.name}`);
+      const scanConfig = buildScanConfig();
+      const target = scopeMode
+        ? discoveredTarget!
+        : await ensureAuthorizedTarget(scanConfig, begin, finish);
 
-      const p2 = begin("Checking authorization…");
-      if (!target.is_allowed) {
-        finish(p2, "error", `${url} is not approved for scanning`);
-        throw new Error(
-          labTrusted
-            ? `${url} could not be approved automatically — please try again.`
-            : `${url} isn't a recognized lab host and no authorization was confirmed. Check ` +
-              `"I have authorization to test this target" above and try again.`,
-        );
-      }
-      finish(
-        p2,
-        "done",
-        labTrusted
-          ? existingTarget ? "Trusted lab target reused ✓" : "Trusted lab host ✓"
-          : existingTarget ? "Authorized target reused ✓" : "Authorized by you ✓",
+      const p3 = begin(
+        scopeMode ? `Launching scoped scan of ${inScopePaths.length} path(s)…` : "Launching scan…",
       );
-
-      const p3 = begin("Launching scan…");
       let current = await api.createScan({
         target_id: target.id,
-        scan_profile: profile,
-        use_zap: useZap && ZAP_SUPPORTED_PROFILES.has(profile),
+        scan_profile: profile === "all" ? "full" : profile,
+        ...(scopeMode
+          ? { in_scope_paths: inScopePaths, out_of_scope_paths: outOfScopePaths }
+          : {}),
       });
       upsertScan(current);
       finish(p3, "done", `Scan ${current.id.slice(0, 8)} launched`);
 
-      const p4 = begin(cfg.scanningLabel);
+      const p4 = begin(scopeMode ? "Attacking in-scope paths…" : cfg.scanningLabel);
       const started = Date.now();
       let polls = 0;
       while (!TERMINAL.includes(current.status)) {
@@ -492,6 +748,13 @@ export default function Scans() {
   const canScanTarget = Boolean(
     selectedRegisteredTarget?.is_allowed || isTrustedHost(url) || authorizationScope === url.trim(),
   );
+  const discoveredPaths = discovery?.paths ?? [];
+  const scopeMode = discoveredPaths.length > 0;
+  const scanButtonLabel = busy
+    ? "Scan in progress…"
+    : scopeMode
+      ? `Scan ${inScope.size} in-scope path${inScope.size === 1 ? "" : "s"}`
+      : PROFILES[profile].buttonLabel;
 
   return (
     <div className="bg-[#f7f6f4]">
@@ -604,16 +867,104 @@ export default function Scans() {
                   <span className="text-[#a61b0d]">＋</span>
                 </summary>
                 <fieldset disabled={Boolean(selectedRegisteredTarget)} className="grid gap-3 border-t border-[#aaa6a1] p-3 disabled:opacity-50 sm:grid-cols-2">
-                  {profile === "command_injection" && (
+                  {(profile === "command_injection" || profile === "sql_injection" || profile === "xss" || profile === "path_traversal" || profile === "file_upload" || profile === "ssrf" || profile === "jwt_session") && (
                     <>
                       <input aria-label="Login username" type="text" value={advUsername} onChange={(event) => setAdvUsername(event.target.value)} placeholder="Login username" className="vv-input" />
                       <input aria-label="Login password" type="password" value={advPassword} onChange={(event) => setAdvPassword(event.target.value)} placeholder="Login password" className="vv-input" />
                       <input aria-label="Login path" type="text" value={advLoginPath} onChange={(event) => setAdvLoginPath(event.target.value)} placeholder="Login path (e.g. /login.php)" className="vv-input sm:col-span-2" />
                     </>
                   )}
+                  {profile === "jwt_session" && (
+                    <>
+                      <input aria-label="Session-check path" type="text" value={advJwtSessionPath} onChange={(event) => setAdvJwtSessionPath(event.target.value)} placeholder="Session-check path (e.g. /rest/user/whoami)" className="vv-input sm:col-span-2" />
+                      <input aria-label="Session marker JSON path" type="text" value={advJwtMarkerPath} onChange={(event) => setAdvJwtMarkerPath(event.target.value)} placeholder="Identity field in session response (e.g. user.email)" className="vv-input" />
+                      <input aria-label="Tampered claim path" type="text" value={advJwtClaimPath} onChange={(event) => setAdvJwtClaimPath(event.target.value)} placeholder="Token claim to tamper (e.g. data.email)" className="vv-input" />
+                      <select aria-label="Token submission style" value={advJwtSubmission} onChange={(event) => setAdvJwtSubmission(event.target.value)} className="vv-input">
+                        <option value="header">Authorization header</option>
+                        <option value="cookie">Cookie</option>
+                      </select>
+                      {advJwtSubmission === "cookie" && (
+                        <input aria-label="Token cookie name" type="text" value={advJwtCookieName} onChange={(event) => setAdvJwtCookieName(event.target.value)} placeholder="Token cookie name (e.g. token)" className="vv-input" />
+                      )}
+                    </>
+                  )}
+                  {profile === "weak_auth" && (
+                    <>
+                      <input aria-label="Login path override" type="text" value={advLoginPath} onChange={(event) => setAdvLoginPath(event.target.value)} placeholder="Login path override (e.g. /login) — leave blank to auto-discover" className="vv-input sm:col-span-2" />
+                      <input aria-label="Known valid username or email" type="text" value={advKnownUsername} onChange={(event) => setAdvKnownUsername(event.target.value)} placeholder="Known valid username/email (optional — enables enumeration check)" className="vv-input sm:col-span-2" />
+                    </>
+                  )}
+                  {profile === "xxe" && (
+                    <input aria-label="XML endpoint path" type="text" value={advXmlEndpoint} onChange={(event) => setAdvXmlEndpoint(event.target.value)} placeholder="XML endpoint path (e.g. /api/import) — required unless targeting the Juice Shop lab" className="vv-input sm:col-span-2" />
+                  )}
+                  {profile === "path_traversal" && (
+                    <>
+                      <input aria-label="Controlled canary path" type="text" value={advCanaryPath} onChange={(event) => setAdvCanaryPath(event.target.value)} placeholder="Canary path outside allowed directory" className="vv-input" />
+                      <input aria-label="Controlled canary marker" type="text" value={advCanaryMarker} onChange={(event) => setAdvCanaryMarker(event.target.value)} placeholder="Exact text stored in canary file" className="vv-input" />
+                    </>
+                  )}
+                  {profile === "file_upload" && (
+                    <>
+                      <input aria-label="Upload endpoint" type="text" value={advUploadPath} onChange={(event) => setAdvUploadPath(event.target.value)} placeholder="Upload path or full URL" className="vv-input sm:col-span-2" />
+                      <input aria-label="File field name" type="text" value={advFileField} onChange={(event) => setAdvFileField(event.target.value)} placeholder="Multipart file field name" className="vv-input" />
+                      <input aria-label="Public upload base path" type="text" value={advPublicBasePath} onChange={(event) => setAdvPublicBasePath(event.target.value)} placeholder="Public upload base path" className="vv-input" />
+                    </>
+                  )}
+                  {profile === "misconfiguration" && (
+                    <>
+                      <input aria-label="Directory paths" type="text" value={advDirectoryPaths} onChange={(event) => setAdvDirectoryPaths(event.target.value)} placeholder="Directory paths, comma-separated (e.g. /uploads/, /backup/)" className="vv-input sm:col-span-2" />
+                      <input aria-label="Diagnostic paths" type="text" value={advDiagnosticPaths} onChange={(event) => setAdvDiagnosticPaths(event.target.value)} placeholder="Diagnostic paths, comma-separated (e.g. /actuator/env, /debug/vars)" className="vv-input sm:col-span-2" />
+                    </>
+                  )}
+                  {profile === "ssrf" && (
+                    <>
+                      <input aria-label="SSRF endpoint" type="text" value={advSsrfEndpoint} onChange={(event) => setAdvSsrfEndpoint(event.target.value)} placeholder="URL-fetch endpoint path or full URL" className="vv-input sm:col-span-2" />
+                      <input aria-label="URL parameter" type="text" value={advSsrfParameter} onChange={(event) => setAdvSsrfParameter(event.target.value)} placeholder="URL parameter name (e.g. imageUrl)" className="vv-input" />
+                      <select aria-label="SSRF request style" value={advSsrfRequestStyle} onChange={(event) => setAdvSsrfRequestStyle(event.target.value)} className="vv-input">
+                        <option value="form">POST form</option>
+                        <option value="json">POST JSON</option>
+                        <option value="query">GET query</option>
+                      </select>
+                    </>
+                  )}
+                  {profile === "idor" && (
+                    <>
+                      <input aria-label="Login path" type="text" value={advLoginPath} onChange={(event) => setAdvLoginPath(event.target.value)} placeholder="Login path (e.g. /rest/user/login)" className="vv-input sm:col-span-2" />
+                      <input aria-label="First account username" type="text" value={advIdorUserA} onChange={(event) => setAdvIdorUserA(event.target.value)} placeholder="First account username/email" className="vv-input" />
+                      <input aria-label="First account password" type="password" value={advIdorPassA} onChange={(event) => setAdvIdorPassA(event.target.value)} placeholder="First account password" className="vv-input" />
+                      <input aria-label="Second account username" type="text" value={advIdorUserB} onChange={(event) => setAdvIdorUserB(event.target.value)} placeholder="Second account username/email" className="vv-input" />
+                      <input aria-label="Second account password" type="password" value={advIdorPassB} onChange={(event) => setAdvIdorPassB(event.target.value)} placeholder="Second account password" className="vv-input" />
+                      <input aria-label="Owner-scoped object path" type="text" value={advIdorObjectTemplate} onChange={(event) => setAdvIdorObjectTemplate(event.target.value)} placeholder="Object path with {object_id} (e.g. /api/orders/{object_id})" className="vv-input sm:col-span-2" />
+                      <input aria-label="Owner field path" type="text" value={advIdorOwnerMarker} onChange={(event) => setAdvIdorOwnerMarker(event.target.value)} placeholder="Owner field in response JSON (e.g. data.UserId)" className="vv-input sm:col-span-2" />
+                    </>
+                  )}
+                  {(profile === "sql_injection" || profile === "command_injection") && (
+                    <label className="flex items-start gap-3 sm:col-span-2">
+                      <input
+                        type="checkbox"
+                        checked={advUseZap}
+                        onChange={(event) => setAdvUseZap(event.target.checked)}
+                        className="mt-0.5 h-4 w-4 shrink-0 accent-[#f0321d]"
+                      />
+                      <span className="text-[10px] leading-relaxed text-[#676360]">
+                        <strong className="block text-[9px] uppercase tracking-wide text-[#171616]">
+                          Cross-check with OWASP ZAP
+                        </strong>
+                        Runs ZAP's active scanner against the same endpoint as a second opinion
+                        (may take a minute or two longer). Confidence rises when both agree; a
+                        disagreement is reported, not hidden.
+                        Requires the separate ZAP lab service (tools/docker-compose.yml) to be running —
+                        skipped automatically if it isn't reachable.
+                      </span>
+                    </label>
+                  )}
                   <input aria-label="Session cookie" type="text" value={advCookie} onChange={(event) => setAdvCookie(event.target.value)} placeholder="Session cookie (name=value; name2=value2)" className="vv-input sm:col-span-2" />
-                  <input aria-label="Exact parameter name" type="text" value={advParameter} onChange={(event) => setAdvParameter(event.target.value)} placeholder="Exact parameter name (e.g. ip)" className="vv-input" />
-                  <input aria-label="Exact injection path or URL" type="text" value={advPath} onChange={(event) => setAdvPath(event.target.value)} placeholder="Exact injection path or full URL" className="vv-input" />
+                  {(profile === "command_injection" || profile === "sql_injection" || profile === "xss" || profile === "path_traversal") && (
+                    <>
+                      <input aria-label="Exact parameter name" type="text" value={advParameter} onChange={(event) => setAdvParameter(event.target.value)} placeholder="Exact parameter name (e.g. ip)" className="vv-input" />
+                      <input aria-label="Exact injection path or URL" type="text" value={advPath} onChange={(event) => setAdvPath(event.target.value)} placeholder="Exact injection path or full URL" className="vv-input" />
+                    </>
+                  )}
                   <p className="text-[9px] leading-relaxed text-[#676360] sm:col-span-2">
                     {selectedRegisteredTarget
                       ? "This run reuses the authorization and stored scan configuration of the selected target. Register a new target to change these overrides."
@@ -622,31 +973,54 @@ export default function Scans() {
                 </fieldset>
               </details>
 
+              <div className="border-t border-[#d0ccc7] pt-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-[0.08em]">
+                      Scope discovery · optional
+                    </p>
+                    <p className="mt-1 text-[10px] leading-relaxed text-[#676360]">
+                      Crawl the target to map its paths, then pick which are in scope. A scoped
+                      run attacks only the selected paths with the detector chosen above (or every
+                      detector when "All Detectors" is selected).
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={runDiscovery}
+                    disabled={busy || discovering || !canScanTarget}
+                    className="vv-button-secondary min-w-[160px]"
+                  >
+                    {discovering
+                      ? "Discovering…"
+                      : scopeMode
+                        ? "Re-discover paths"
+                        : "Discover paths"}
+                  </button>
+                </div>
+                {scopeMode && (
+                  <div className="mt-3">
+                    <ScopeTree paths={discoveredPaths} selected={inScope} onChange={setInScope} />
+                    <p className="mt-2 text-[9px] leading-relaxed text-[#676360]">
+                      Unchecked paths are recorded as out-of-scope on the scan and skipped during
+                      the attack.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d0ccc7] pt-4">
-                <label className="flex min-h-10 items-center gap-3">
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    checked={useZap}
-                    disabled={!ZAP_SUPPORTED_PROFILES.has(profile) || busy}
-                    onChange={(event) => setUseZap(event.target.checked)}
-                    className="h-4 w-4 shrink-0 accent-[#f0321d] disabled:opacity-40"
-                  />
-                  <span>
-                    <strong className="block text-[9px] uppercase tracking-wide">Use ZAP validation</strong>
-                    <span className="block text-[9px] text-[#676360]">
-                      {ZAP_SUPPORTED_PROFILES.has(profile)
-                        ? "Run an additional passive ZAP check"
-                        : "Available for your five detector profiles"}
-                    </span>
-                  </span>
-                </label>
+                <p className="text-[9px] font-bold uppercase tracking-wide text-[#676360]">
+                  {scopeMode
+                    ? `Scoped run · ${profile === "all" ? "full detector suite" : PROFILES[profile].label} across ${inScope.size} path(s)`
+                    : "Output: finding record + structured evidence"}
+                </p>
                 <button
                   type="submit"
-            disabled={busy || !canScanTarget}
+                  disabled={busy || !canScanTarget || (scopeMode && inScope.size === 0)}
                   className="vv-button-primary min-w-[190px]"
                 >
-                  {busy ? "Scan in progress…" : PROFILES[profile].buttonLabel}
+                  {scanButtonLabel}
                 </button>
               </div>
             </div>
@@ -687,6 +1061,68 @@ export default function Scans() {
         <div className="mx-4 mt-4 border border-[#aaa6a1] bg-[#efedea] p-4 text-[10px] leading-relaxed text-[#676360] sm:mx-5 lg:mx-6">
           Your viewer role has read-only access. Ask an administrator for analyst access to run scans.
         </div>
+      )}
+
+      {findings && scopeMode && (
+        <section className="border-b border-[#aaa6a1] p-4 sm:p-5 lg:p-6">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="vv-kicker">Latest run</p>
+              <h2 className="mt-1 text-lg font-black tracking-[-0.03em]">Scan scope</h2>
+            </div>
+            <div className="flex items-end gap-2">
+              <label>
+                <span className="vv-label">Format</span>
+                <select
+                  value={reportFormat}
+                  onChange={(event) => setReportFormat(event.target.value as ReportFormat)}
+                  className="vv-input mt-2 font-bold"
+                  aria-label="Report format"
+                >
+                  <option value="csv">CSV</option>
+                  <option value="doc">Doc</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadFindingsReport(findings, reportFormat, {
+                    inScope: discoveredPaths.map((p) => p.path).filter((p) => inScope.has(p)),
+                    outOfScope: discoveredPaths.map((p) => p.path).filter((p) => !inScope.has(p)),
+                  })
+                }
+                className="vv-button-secondary"
+              >
+                Download report
+              </button>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="border border-[#aaa6a1] bg-[#f7f6f4]">
+              <p className="border-b border-[#aaa6a1] bg-[#e5f3eb] px-3 py-2 text-[9px] font-black uppercase tracking-wide text-[#167249]">
+                In scope · {discoveredPaths.filter((p) => inScope.has(p.path)).length}
+              </p>
+              <ul className="vv-scrollbar max-h-[220px] overflow-y-auto p-2 font-mono text-[10px] text-[#201f1e]">
+                {discoveredPaths.filter((p) => inScope.has(p.path)).map((p) => (
+                  <li key={p.path} className="truncate py-0.5" title={p.path}>{p.path}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="border border-[#aaa6a1] bg-[#f7f6f4]">
+              <p className="border-b border-[#aaa6a1] bg-[#ffe9e5] px-3 py-2 text-[9px] font-black uppercase tracking-wide text-[#a61b0d]">
+                Out of scope · {discoveredPaths.filter((p) => !inScope.has(p.path)).length}
+              </p>
+              <ul className="vv-scrollbar max-h-[220px] overflow-y-auto p-2 font-mono text-[10px] text-[#676360]">
+                {discoveredPaths.filter((p) => !inScope.has(p.path)).map((p) => (
+                  <li key={p.path} className="truncate py-0.5" title={p.path}>{p.path}</li>
+                ))}
+                {discoveredPaths.filter((p) => !inScope.has(p.path)).length === 0 && (
+                  <li className="py-0.5 text-[#8a8681]">Everything discovered was in scope.</li>
+                )}
+              </ul>
+            </div>
+          </div>
+        </section>
       )}
 
       {findings && findings.length > 0 && (

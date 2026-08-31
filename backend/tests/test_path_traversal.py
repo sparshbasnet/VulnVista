@@ -1,130 +1,150 @@
 import httpx
+import pytest
 
+from app.scanners import get_detectors_for_profile
 from app.scanners.base import ScanContext
-from app.scanners.path_traversal import PathTraversalDetector
+from app.scanners.path_traversal import (
+    PathTraversalDetector,
+    build_traversal_variants,
+    classify,
+    extract_marker_snippet,
+)
+from app.scanners.presets.path_traversal import CANARY_MARKER, CANARY_PATH
 
 
-class FakeAsyncClient:
-    def __init__(self, responses: list[httpx.Response], **kwargs):
-        self.responses = iter(responses)
-        self.requests: list[tuple[str, str]] = []
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return None
-
-    async def get(self, url: str):
-        self.requests.append(("GET", url))
-        return next(self.responses)
-
-    async def post(self, url: str, data: dict[str, str]):
-        self.requests.append(("POST", url))
-        return next(self.responses)
+def test_build_variants_target_only_controlled_canary() -> None:
+    variants = build_traversal_variants("/srv/canaries/path-test.txt", 3)
+    assert variants == [
+        "../srv/canaries/path-test.txt",
+        "../../srv/canaries/path-test.txt",
+        "../../../srv/canaries/path-test.txt",
+        "/srv/canaries/path-test.txt",
+    ]
+    assert not any("passwd" in payload or ".env" in payload for payload in variants)
 
 
-async def test_path_traversal_detects_passwd_disclosure(monkeypatch):
-    base_url = "http://test.local"
-    login_response = httpx.Response(200, text="<input name='user_token' value='token-123'>")
-    login_post_response = httpx.Response(200)
-    traversal_response = httpx.Response(
-        200,
-        text="root:x:0:0:root:/root:/bin/bash",
-        request=httpx.Request("GET", f"{base_url}/vulnerabilities/fi/?page=../../etc/passwd"),
-    )
+def test_classify_requires_returned_canary() -> None:
+    clean = classify([])
+    assert clean.detected is False
+    assert clean.validation_status == "NOT_DETECTED"
 
-    monkeypatch.setattr(
-        "app.scanners.path_traversal.httpx.AsyncClient",
-        lambda **kwargs: FakeAsyncClient(
-            [login_response, login_post_response, traversal_response], **kwargs
-        ),
-    )
+    confirmed = classify(["../../srv/canary.txt"])
+    assert confirmed.detected is True
+    assert confirmed.validation_status == "CONFIRMED"
+    assert confirmed.confidence == "HIGH"
 
+
+def test_extract_marker_snippet_excludes_unrelated_body_data() -> None:
+    body = "A" * 200 + CANARY_MARKER + "B" * 200
+    snippet = extract_marker_snippet(body, CANARY_MARKER, radius=10)
+    assert snippet == "A" * 10 + CANARY_MARKER + "B" * 10
+
+
+def test_profile_resolves_to_path_traversal_detector() -> None:
+    detectors = get_detectors_for_profile("path_traversal")
+    assert [detector.detector_id for detector in detectors] == ["path_traversal"]
+
+
+def _mock_client(monkeypatch: pytest.MonkeyPatch, handler) -> None:
+    real_init = httpx.AsyncClient.__init__
+
+    def patched_init(self: httpx.AsyncClient, *args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
+
+
+LOGIN_HTML = """
+<form action="/login.php" method="POST">
+  <input type="hidden" name="user_token" value="token-1">
+  <input name="username">
+  <input type="password" name="password">
+  <input type="submit" name="Login" value="Login">
+</form>
+"""
+
+
+async def test_dvwa_preset_confirms_only_controlled_canary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/login.php" and request.method == "GET":
+            return httpx.Response(200, text=LOGIN_HTML)
+        if request.url.path == "/login.php" and request.method == "POST":
+            return httpx.Response(302, headers={"Location": "/index.php"})
+        if request.url.path == "/index.php":
+            return httpx.Response(200, text="Welcome")
+        if request.url.path == "/vulnerabilities/fi/":
+            value = request.url.params.get("page", "")
+            payloads.append(value)
+            if value.startswith("../../../") and value.endswith(CANARY_PATH.lstrip("/")):
+                return httpx.Response(200, text=f"before {CANARY_MARKER} after")
+            return httpx.Response(200, text="ordinary permitted page")
+        return httpx.Response(404)
+
+    _mock_client(monkeypatch, handler)
     result = await PathTraversalDetector().check(
-        ScanContext(target_id="test-target", base_url=base_url)
+        ScanContext(target_id="t1", base_url="http://dvwa")
     )
 
-    assert result.detected is True
     assert result.validation_status == "CONFIRMED"
-    assert result.severity == "HIGH"
-    assert result.confidence == "HIGH"
+    assert result.parameter == "page"
     assert result.cwe == "CWE-22"
-    assert result.endpoint == str(traversal_response.url)
+    assert result.evidence["candidate_source"] == "lab preset"
+    assert result.evidence["sensitive_system_files_probed"] is False
+    assert result.evidence["successful_probes"][0]["payload"].startswith("../../../")
+    assert all("/etc/passwd" not in payload for payload in payloads)
 
 
-async def test_path_traversal_does_not_flag_normal_response(monkeypatch):
-    login_response = httpx.Response(200, text="<input name='user_token' value='token-123'>")
-    login_post_response = httpx.Response(200)
-    traversal_response = httpx.Response(200, text="File not found")
+async def test_generic_target_requires_controlled_canary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        pytest.fail("No request should run without controlled canary configuration")
 
-    monkeypatch.setattr(
-        "app.scanners.path_traversal.httpx.AsyncClient",
-        lambda **kwargs: FakeAsyncClient(
-            [login_response, login_post_response, traversal_response], **kwargs
-        ),
-    )
-
+    _mock_client(monkeypatch, handler)
     result = await PathTraversalDetector().check(
-        ScanContext(target_id="test-target", base_url="http://test.local")
+        ScanContext(target_id="t1", base_url="https://example.test/files?page=welcome")
     )
 
-    assert result.detected is False
-    assert result.validation_status == "NOT_DETECTED"
-    assert result.evidence == {"reason": "Path traversal was not detected."}
-
-
-async def test_path_traversal_returns_error_when_login_token_is_missing(monkeypatch):
-    login_response = httpx.Response(200, text="<form></form>")
-
-    monkeypatch.setattr(
-        "app.scanners.path_traversal.httpx.AsyncClient",
-        lambda **kwargs: FakeAsyncClient([login_response], **kwargs),
-    )
-
-    result = await PathTraversalDetector().check(
-        ScanContext(target_id="test-target", base_url="http://test.local")
-    )
-
-    assert result.detected is False
     assert result.validation_status == "ERROR"
-    assert result.evidence == {"reason": "Unable to extract DVWA login token."}
+    assert "canary_path" in result.evidence_summary
+    assert "canary_marker" in result.evidence_summary
 
 
-async def test_path_traversal_detects_juice_shop_package_metadata(monkeypatch):
-    base_url = "http://vulnvista_juice_shop:3000"
-    response = httpx.Response(
-        200,
-        text='{"name":"juice-shop","version":"1.0.0"}',
-        request=httpx.Request("GET", f"{base_url}/ftp/%2e%2e%2fpackage.json"),
-    )
+async def test_no_marker_is_not_detected(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="safe response without controlled marker")
 
-    monkeypatch.setattr(
-        "app.scanners.path_traversal.httpx.AsyncClient",
-        lambda **kwargs: FakeAsyncClient([response], **kwargs),
-    )
-
+    _mock_client(monkeypatch, handler)
     result = await PathTraversalDetector().check(
-        ScanContext(target_id="test-target", base_url=base_url)
+        ScanContext(
+            target_id="t1",
+            base_url="https://example.test/download?page=welcome.txt",
+            extra={"canary_path": "/srv/canary.txt", "canary_marker": "SAFE-CANARY"},
+        )
     )
 
-    assert result.detected is True
-    assert result.validation_status == "CONFIRMED"
-    assert result.endpoint == str(response.url)
-
-
-async def test_path_traversal_reports_protected_juice_shop_file_endpoint(monkeypatch):
-    response = httpx.Response(403, text="Forbidden")
-
-    monkeypatch.setattr(
-        "app.scanners.path_traversal.httpx.AsyncClient",
-        lambda **kwargs: FakeAsyncClient([response], **kwargs),
-    )
-
-    result = await PathTraversalDetector().check(
-        ScanContext(target_id="test-target", base_url="http://vulnvista_juice_shop:3000")
-    )
-
-    assert result.detected is False
     assert result.validation_status == "NOT_DETECTED"
-    assert result.evidence["status_code"] == 403
+    assert result.detected is False
+    assert result.evidence["successful_probes"] == []
+
+
+async def test_baseline_contamination_returns_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=f"unexpected {CANARY_MARKER}")
+
+    _mock_client(monkeypatch, handler)
+    result = await PathTraversalDetector().check(
+        ScanContext(
+            target_id="t1",
+            base_url="https://example.test/download?page=welcome.txt",
+            extra={"canary_path": CANARY_PATH, "canary_marker": CANARY_MARKER},
+        )
+    )
+
+    assert result.validation_status == "ERROR"
+    assert "already appears" in result.evidence_summary

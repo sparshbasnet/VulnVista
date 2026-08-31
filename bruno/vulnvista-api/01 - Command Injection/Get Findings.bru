@@ -1,0 +1,21 @@
+meta {
+  name: Get Findings
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/scans/{{cmdiScanId}}/findings
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+docs {
+  Empty array means the detector ran cleanly and found nothing (or the scan
+  is still running / errored — check "Get Scan Status" first, and
+  error_summary on the scan if status is FAILED).
+}

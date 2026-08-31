@@ -54,36 +54,13 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from app.scanners.base import BaseDetector, DetectorResult, ScanContext
-
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "request_timeout": 15.0,
-    "oob_wait_seconds": 3.0,
-    "request_style": "raw",
-    "callback_host": "backend",
-    # A file present on virtually every Linux container, containing nothing
-    # but public OS branding info — never sensitive data. Set either to a
-    # falsy value in scan config to skip this probe.
-    "local_file_path": "/etc/os-release",
-    "local_file_fingerprint": "PRETTY_NAME=",
-}
-
-# Preset for the bundled Juice Shop lab container's deprecated B2B file
-# upload endpoint (routes/fileUpload.ts -> handleXmlUpload): a multipart
-# upload accepting a .xml file, parsed with entity resolution enabled before
-# being rejected with a 410. No authentication required. Note: Juice Shop
-# disables this code path by default whenever it detects it's running in a
-# container (NODE_ENV=unsafe or a safetyOverride config re-enables it) — see
-# lab/docker-compose.yml.
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "juice-shop": {
-        "xml_endpoint": "/file-upload",
-        "request_style": "multipart",
-        "upload_field": "file",
-        "upload_filename": "probe.xml",
-    },
-}
-LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
+from app.scanners.base import (
+    BaseDetector,
+    DetectorResult,
+    ScanContext,
+    scope_cfg_to_path,
+)
+from app.scanners.presets.xxe import GENERIC_DEFAULTS, LAB_PRESETS
 
 
 class DetectorError(Exception):
@@ -202,6 +179,7 @@ class XXEDetector(BaseDetector):
         host = parsed.hostname or ""
         base = f"{parsed.scheme}://{parsed.netloc}"
         cfg = {**GENERIC_DEFAULTS, **LAB_PRESETS.get(host, {}), **context.extra}
+        scope_cfg_to_path(cfg, context, "xml_endpoint")
         source = (
             "explicit configuration" if "xml_endpoint" in context.extra
             else "lab preset" if host in LAB_PRESETS
@@ -357,24 +335,3 @@ class XXEDetector(BaseDetector):
             cwe="CWE-611",
             owasp_category="A05:2021 - Security Misconfiguration",
         )
-
-#
-# import json
-# import os
-# async def _main() -> None:
-#     """Run a manual XXE check against an authorized target."""
-#     target_url = os.getenv("XXE_TARGET_URL", "http://juice-shop:3000")
-
-#     result = await XXEDetector().check(
-#         ScanContext(
-#             target_id="manual-xxe",
-#             base_url=target_url,
-#             timeout_seconds=300,
-#         )
-#     )
-
-#     print(json.dumps(result.__dict__, indent=2, default=str))
-
-
-# if __name__ == "__main__":
-#     asyncio.run(_main())

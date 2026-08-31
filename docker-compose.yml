@@ -46,6 +46,9 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       SECRET_KEY: ${SECRET_KEY:-change-me-generate-a-random-64-char-value}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      MAX_FAILED_LOGINS: ${MAX_FAILED_LOGINS:-5}
+      LOCKOUT_MINUTES: ${LOCKOUT_MINUTES:-15}
+      PASSWORD_RESET_TOKEN_TTL_MINUTES: ${PASSWORD_RESET_TOKEN_TTL_MINUTES:-30}
       INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-}
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
@@ -54,7 +57,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vulnvista}:${POSTGRES_PASSWORD:-change-me-in-dev}@postgres:5432/${POSTGRES_DB:-vulnvista}
       NVD_API_KEY: ${NVD_API_KEY:-}
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BACKEND_PORT:-9000}:9000"
     volumes:
       # Live-reload source mount for development.
       - ./backend/app:/app/app
@@ -75,7 +78,7 @@ services:
     depends_on:
       - backend
     environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:9000/api}
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     volumes:

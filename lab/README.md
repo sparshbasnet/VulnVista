@@ -38,7 +38,7 @@ docker compose --env-file .env -f lab/docker-compose.yml down
 
 | Target | URL | Default credentials | Persistence |
 | --- | --- | --- | --- |
-| DVWA | <http://localhost:8081> (`DVWA_PORT`) | `admin` / `password` | Stateless — reset via its own "Create / Reset Database" page. |
+| DVWA | <http://localhost:8080> (`DVWA_PORT`) | `admin` / `password` | Stateless — reset via its own "Create / Reset Database" page. |
 | OWASP Juice Shop | <http://localhost:3000> (`JUICE_SHOP_PORT`) | No login required to browse; challenges create their own accounts | Bind-mounted to `./storage/lab/juice-shop` on the host, so challenge progress survives restarts. |
 | Metasploitable2 | Many services, each at `localhost:<real-port>+10000` (e.g. `localhost:10022` for SSH) | `msfadmin` / `msfadmin` | Stateless — see [`METASPLOITABLE.md`](./METASPLOITABLE.md) for the full port list and details. |
 | tls-test | <https://localhost:8443> (`TLS_TEST_PORT`) — expect a browser cert warning, that's the point | None | Stateless — static page, no data. |

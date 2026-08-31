@@ -7,7 +7,7 @@ def test_lab_host_is_trusted() -> None:
 
 
 def test_localhost_is_trusted() -> None:
-    assert _is_trusted_host("http://localhost:8081") is True
+    assert _is_trusted_host("http://localhost:8080") is True
 
 
 def test_unknown_host_is_not_trusted() -> None:

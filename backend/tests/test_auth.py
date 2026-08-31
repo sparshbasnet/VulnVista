@@ -16,17 +16,20 @@ from app.schemas.auth import UserCreate
 
 
 def test_password_hash_round_trip() -> None:
-    hashed = hash_password("a-strong-test-password")
+    hashed = hash_password("A-strong-test-password-1")
 
-    assert hashed != "a-strong-test-password"
-    assert verify_password("a-strong-test-password", hashed)
+    assert hashed != "A-strong-test-password-1"
+    assert verify_password("A-strong-test-password-1", hashed)
     assert not verify_password("wrong-password", hashed)
 
 
 def test_access_token_round_trip() -> None:
     user_id = uuid.uuid4()
 
-    assert decode_access_token(create_access_token(user_id)) == user_id
+    claims = decode_access_token(create_access_token(user_id, token_version=3))
+
+    assert claims.user_id == user_id
+    assert claims.token_version == 3
 
 
 def test_expired_access_token_is_rejected() -> None:
@@ -40,7 +43,7 @@ def test_user_creation_normalizes_identity() -> None:
     payload = UserCreate(
         username="Test.Admin",
         email="Test.Admin@Example.test",
-        password="a-strong-test-password",
+        password="A-strong-test-password-1",
         role=UserRole.ADMIN,
     )
 

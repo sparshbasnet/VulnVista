@@ -16,10 +16,6 @@ The project must remain restricted to approved laboratory targets such as:
 
 The implementation period is limited to **8 weeks**.
 
-> **Status:** Sections 3 onwards are the original plan of record and are unchanged.
-> **Section 2B records what has actually been built** — read it first for current progress.
-> Sections 12, 15, 16 and 23 carry status annotations against that baseline.
-
 ---
 
 # 2. Project Goals
@@ -85,102 +81,6 @@ Shared platform work (backend, database, dashboard, reporting, containers, CI/CD
 
 ---
 
-# 2B. Implementation Status — as of 21 August 2026
-
-This section records what has actually been built against the roadmap in Section 8. It is the
-authoritative progress view; the weekly sections below remain as the original plan of record.
-
-**Headline:** Weeks 1–6 are complete. All fifteen detectors are implemented, registered and
-covered by tests; the platform (auth, API, database, dashboard, containers, CI) is running
-end to end. The outstanding work is the Week 6 *reporting* deliverable plus the Week 7–8
-validation, documentation and delivery activities.
-
-## Detector delivery — 15/15
-
-All detectors live in `backend/app/scanners/` and are registered in `DETECTOR_REGISTRY`
-(`backend/app/scanners/__init__.py`), each with a matching scan profile.
-
-| # | Vulnerability | Module | Owner | Tests | Status |
-|---|---|---|---|---|---|
-| 1 | SQL Injection | `sql_injection.py` | Sparsh | `test_sql_injection.py` (35) | Delivered |
-| 2 | Cross-Site Scripting (XSS) | `xss.py` | Sparsh | `test_xss.py` (7) | Delivered |
-| 3 | Broken Access Control / IDOR | `idor.py` | Sparsh | `test_idor.py` (24) | Delivered |
-| 4 | Server-Side Request Forgery | `ssrf.py` | Sparsh | `test_ssrf.py` (12) | Delivered |
-| 5 | XML External Entity (XXE) | `xxe.py` | Sparsh | `test_xxe.py` (12) | Delivered |
-| 6 | Command Injection | `command_injection.py` | Sunil | `test_command_injection.py` (11) | Delivered |
-| 7 | Weak Authentication | `weak_auth.py` | Sunil | `test_weak_auth.py` (10) | Delivered |
-| 8 | Sensitive Files | `sensitive_files.py` | Sunil | `test_sensitive_files.py` (12) | Delivered |
-| 9 | Vulnerable Services | `vulnerable_services.py` | Sunil | `test_vulnerable_services.py` (18) | Delivered |
-| 10 | Weak TLS | `weak_tls.py` | Sunil | `test_weak_tls.py` (21) | Delivered |
-| 11 | Unrestricted File Upload | `file_upload.py` | Nischal | `test_file_upload.py` (9) | Delivered |
-| 12 | JWT / Session Security | `jwt_session.py` | Nischal | `test_jwt_session.py` (22) + `test_jwt_session_security.py` (7) | Delivered |
-| 13 | Path Traversal | `path_traversal.py` | Nischal | `test_path_traversal.py` (8) | Delivered |
-| 14 | CSRF | `csrf.py` | Nischal | `test_csrf.py` (14) | Delivered |
-| 15 | Security Misconfiguration | `misconfiguration.py` | Nischal | `test_misconfiguration.py` (10) | Delivered |
-
-Backend test suite: **245 tests** across 20 test modules (including auth, health, target
-allowlist and finding-schema tests).
-
-## Platform component status
-
-| Area | Delivered | Notes |
-|---|---|---|
-| Laboratory | Yes | `lab/docker-compose.yml` — DVWA, Juice Shop, Metasploitable 2, local TLS test service, plus a DVWA canary volume. Metasploitable 2 is currently commented out and must be re-enabled before the Week 7 vulnerable-services validation runs. |
-| Detector framework | Yes | `BaseDetector` / `DetectorResult` / `ScanContext` in `scanners/base.py`; profile-driven resolution via `get_detectors_for_profile()`. |
-| Scan orchestration | Yes | `services/scan_runner.py` runs detached from the request (FastAPI `BackgroundTask`), opens its own session, and always drives the scan to a terminal status. Only `CONFIRMED`/`SUSPECTED`/`INCONCLUSIVE` verdicts become findings. |
-| Database models | Yes | `User`, `Target`, `Scan`, `Finding`, `Evidence` — evidence is a separate table as specified in Section 4.5. |
-| Authentication | Yes | bcrypt hashing (72-byte guard), HS256 access tokens, `ADMIN`/`ANALYST`/`VIEWER` roles, admin seed via `services/user_seed.py`. |
-| REST API | Partial | `/auth`, `/targets`, `/scans`, `/findings` implemented. `/detectors`, `/evidence`, `/dashboard/*` and `/reports/*` are not — see gaps below. |
-| Dashboard | Yes | React/TypeScript with Login, Dashboard, Targets, Scans, Findings, Evidence and admin-only Users pages; `ProtectedRoute` / `AdminRoute` guards. Severity distribution is computed client-side from `/findings`. |
-| Containers | Yes | Root `docker-compose.yml` — postgres, backend, frontend, pgAdmin on `vulnvista_net`. |
-| CI | Yes | `.github/workflows/ci.yml` — backend ruff + pytest, frontend lint + build, then backend/frontend Docker image builds. |
-| API client collection | Yes | Bruno collection at `bruno/vulnvista-api`. |
-| Reporting (HTML/PDF) | **No** | Not started. This is the one outstanding Week 6 deliverable. |
-
-## Deviations from the original plan
-
-These are accepted changes, recorded so the academic report can explain them:
-
-1. **OWASP ZAP integration added.** `services/zap_client.py` wraps the ZAP daemon (context
-   creation, readiness check) and `zaproxy` is a declared dependency. This was not in the
-   original plan; it is available as a corroborating source for detector findings and as the
-   basis for a future ZAP-backed detector.
-2. **`sslyze` and `playwright` used directly** for TLS inspection and browser-side XSS
-   validation respectively, rather than hand-rolled checks.
-3. **Scan profiles are one-detector-per-profile.** `SCAN_PROFILES` maps each detector to its own
-   profile and `default` resolves to `command_injection` only. There is no profile that runs the
-   full fifteen — required before the Week 7 full-scan timing and repeatability measurements.
-4. **Schema is created by `Base.metadata.create_all` at startup** (`app/main.py`), with only one
-   Alembic revision (`20260814_0001_add_users`) in `backend/alembic/versions/`. Alembic is
-   installed but does not yet describe the targets/scans/findings/evidence tables.
-5. **Target management is create/read only.** No update or delete endpoint; the allowlist is the
-   guard on what may be scanned (`test_targets_allowlist.py`).
-6. **No token refresh.** Access tokens only; the dashboard re-authenticates on expiry.
-
-## Outstanding work carried into Weeks 7–8
-
-Ordered by risk to the final deliverable:
-
-1. **Reporting module** — `POST /reports/{scan_id}`, HTML template, PDF export, and the
-   dashboard hook to download it (Week 6 deliverable, still open).
-2. **A full-scan profile** — an `all` / `full` profile covering all fifteen detectors, without
-   which Section 10's scan-duration and repeatability metrics cannot be produced.
-3. **Alembic parity** — migrations for every table, so a fresh deployment is reproducible
-   without `create_all`.
-4. **Re-enable Metasploitable 2** in `lab/docker-compose.yml` for vulnerable-services and
-   weak-TLS validation. (Currently modified and uncommitted in the working tree.)
-5. **Remaining API surface** — `GET /detectors`, `GET /evidence`, and the `/dashboard/*`
-   summary endpoints (the dashboard currently aggregates client-side, which is acceptable but
-   should be a recorded decision if it stays).
-6. **Scan history comparison** — new / recurring / remediated findings across scans
-   (Section 16, History).
-7. **Documentation** — `docs/api/`, `docs/detectors/` and `docs/screenshots/` are still empty;
-   `docs/architecture/` and `docs/testing/` have content, and `docs/diagrams/` is complete
-   (14 diagrams).
-8. **Week 7 validation and Week 8 delivery** exactly as specified in Sections 11 and the Week 8
-   section below.
-
----
 # 3. High-Level System Workflow
 
 ```text
@@ -510,11 +410,14 @@ class BaseDetector:
     supported_targets: list[str]
     owner: str  # Nischal / Sparsh / Sunil
 
-    async def check(self, context): ...
+    async def check(self, context):
+        ...
 
-    async def validate(self, result): ...
+    async def validate(self, result):
+        ...
 
-    def build_finding(self, result): ...
+    def build_finding(self, result):
+        ...
 ```
 
 A detector should return a common result structure.
@@ -529,7 +432,7 @@ A detector should return a common result structure.
   "confidence": "HIGH",
   "endpoint": "/vulnerabilities/sqli/",
   "parameter": "id",
-  "evidence": {},å
+  "evidence": {},
   "remediation": "...",
   "cwe": "CWE-89"
 }
@@ -1477,31 +1380,31 @@ The team submits:
 
 # 12. Complete Milestone Register
 
-| Milestone | Target | Owners (parallel) | Expected Outcome | Status (21 Aug 2026) |
-|---|---|---|---|---|
-| M1 | End Week 1 | All | Scope, architecture, lab foundation + auth scaffold | ✅ Done |
-| V1 | Week 2 | Sparsh | SQL injection detector | ✅ Done |
-| V2 | Week 2 | Sunil | Command injection detector | ✅ Done |
-| V3 | Week 2 | Nischal | File-upload detector | ✅ Done |
-| M2 | End Week 2 | All | Auth complete + core framework + first 3 detectors (3/15) | ✅ Done |
-| V4 | Week 3 | Sparsh | XSS detector | ✅ Done |
-| V5 | Week 3 | Sunil | Weak-authentication detector | ✅ Done |
-| V6 | Week 3 | Nischal | JWT/session detector | ✅ Done |
-| M2B | End Week 3 | All | Six integrated detectors (6/15) | ✅ Done |
-| V7 | Week 4 | Sparsh | IDOR/broken access-control detector | ✅ Done |
-| V8 | Week 4 | Sunil | Sensitive-file exposure detector | ✅ Done |
-| V9 | Week 4 | Nischal | Path traversal detector | ✅ Done |
-| M3A | End Week 4 | All | Nine integrated detectors + dashboard MVP (9/15) | ✅ Done |
-| V10 | Week 5 | Sparsh | SSRF detector | ✅ Done |
-| V11 | Week 5 | Sunil | Known vulnerable-service detector | ✅ Done |
-| V12 | Week 5 | Nischal | CSRF detector | ✅ Done |
-| M3 | End Week 5 | All | Twelve integrated detectors + full dashboard (12/15) | ✅ Done |
-| V13 | Week 6 | Sparsh | XXE detector | ✅ Done |
-| V14 | Week 6 | Sunil | Weak-TLS detector | ✅ Done |
-| V15 | Week 6 | Nischal | Security-misconfiguration detector | ✅ Done |
-| M4/M5A | End Week 6 | All | All 15 detectors + integrated/containerised system (15/15) | ⚠️ Partial — reporting outstanding |
-| M5 | End Week 7 | All | Validated release candidate | ▶ In progress |
-| M6 | End Week 8 | All | Final prototype, report and presentation | ⏳ Not started |
+| Milestone | Target | Owners (parallel) | Expected Outcome |
+|---|---|---|---|
+| M1 | End Week 1 | All | Scope, architecture, lab foundation + auth scaffold |
+| V1 | Week 2 | Sparsh | SQL injection detector |
+| V2 | Week 2 | Sunil | Command injection detector |
+| V3 | Week 2 | Nischal | File-upload detector |
+| M2 | End Week 2 | All | Auth complete + core framework + first 3 detectors (3/15) |
+| V4 | Week 3 | Sparsh | XSS detector |
+| V5 | Week 3 | Sunil | Weak-authentication detector |
+| V6 | Week 3 | Nischal | JWT/session detector |
+| M2B | End Week 3 | All | Six integrated detectors (6/15) |
+| V7 | Week 4 | Sparsh | IDOR/broken access-control detector |
+| V8 | Week 4 | Sunil | Sensitive-file exposure detector |
+| V9 | Week 4 | Nischal | Path traversal detector |
+| M3A | End Week 4 | All | Nine integrated detectors + dashboard MVP (9/15) |
+| V10 | Week 5 | Sparsh | SSRF detector |
+| V11 | Week 5 | Sunil | Known vulnerable-service detector |
+| V12 | Week 5 | Nischal | CSRF detector |
+| M3 | End Week 5 | All | Twelve integrated detectors + full dashboard (12/15) |
+| V13 | Week 6 | Sparsh | XXE detector |
+| V14 | Week 6 | Sunil | Weak-TLS detector |
+| V15 | Week 6 | Nischal | Security-misconfiguration detector |
+| M4/M5A | End Week 6 | All | All 15 detectors + integrated/containerised system (15/15) |
+| M5 | End Week 7 | All | Validated release candidate |
+| M6 | End Week 8 | All | Final prototype, report and presentation |
 
 ---
 
@@ -1597,130 +1500,115 @@ Potential core API groups:
 /api/dashboard
 ```
 
-Example operations, annotated with implementation status (`[x]` implemented, `[ ]` outstanding):
+Example operations:
 
 ```text
-[x] POST   /auth/login
-[x] POST   /auth/logout
-[x] GET    /auth/me
-[x] POST   /auth/users            (admin only)
+POST   /auth/login
+POST   /auth/logout
+GET    /auth/me
+POST   /auth/users            (admin only)
 
-[x] POST   /targets
-[x] GET    /targets
-[x] GET    /targets/{id}
+POST   /targets
+GET    /targets
+GET    /targets/{id}
 
-[x] POST   /scans
-[x] GET    /scans
-[x] GET    /scans/{id}
-[x] GET    /scans/{id}/findings
+POST   /scans
+GET    /scans
+GET    /scans/{id}
+GET    /scans/{id}/findings
 
-[ ] GET    /detectors
+GET    /detectors
 
-[x] GET    /findings
-[x] GET    /findings/{id}
-[x] PATCH  /findings/{id}/status
+GET    /findings
+GET    /findings/{id}
+PATCH  /findings/{id}/status
 
-[ ] GET    /dashboard/summary        (dashboard aggregates client-side today)
-[ ] GET    /dashboard/severity
-[ ] GET    /dashboard/categories
+GET    /dashboard/summary
+GET    /dashboard/severity
+GET    /dashboard/categories
 
-[ ] POST   /reports/{scan_id}
+POST   /reports/{scan_id}
 ```
 
-Implemented routers live in `backend/app/api/v1/` (`auth.py`, `targets.py`, `scans.py`,
-`findings.py`). All non-public endpoints require a valid authentication token. The final endpoint
-design can be adapted during development.
+All non-public endpoints require a valid authentication token. The final endpoint design can be adapted during development.
 
 ---
 
 # 16. Dashboard Implementation Checklist
 
-Status as of 21 August 2026 — `[x]` done, `[~]` partial, `[ ]` not started.
-
 ## Login / Access
 
-- [x] Login page (`pages/Login.tsx`).
-- [~] Token storage/refresh handling — access token stored; no refresh token issued.
-- [x] Protected-route wrapper (`auth/ProtectedRoute.tsx`, `auth/AdminRoute.tsx`).
-- [x] Role-based UI — `canOperate` gate in `auth/AuthContext.tsx`; viewers see a read-only
-      notice on Scans and no Users link in `components/Layout.tsx`.
-- [x] Logout.
+- [ ] Login page.
+- [ ] Token storage/refresh handling.
+- [ ] Protected-route wrapper.
+- [ ] Role-based UI (hide privileged actions from viewers).
+- [ ] Logout.
 
 ## Main Dashboard
 
-`pages/Dashboard.tsx` — panels: Security posture stat row, Severity distribution, Scan outcomes
-(last 7 days), Detector coverage, OWASP mapping, Highest-risk open findings.
-
-- [x] Total scans — via the Scan outcomes panel and the scan-success stat cell.
-- [x] Total findings — open-findings stat cell.
-- [x] Critical count.
-- [x] High count.
-- [x] Medium count.
-- [x] Low count.
-- [x] Severity chart — stacked bar plus per-severity bars.
-- [x] Vulnerability-category chart — OWASP mapping and Detector coverage panels.
+- [ ] Total scans.
+- [ ] Total findings.
+- [ ] Critical count.
+- [ ] High count.
+- [ ] Medium count.
+- [ ] Low count.
+- [ ] Severity chart.
+- [ ] Vulnerability-category chart.
 - [ ] Target distribution.
-- [~] Recent scans — shown as a 7-day outcome chart rather than a list.
-- [x] Recent critical findings — Highest-risk open findings table.
+- [ ] Recent scans.
+- [ ] Recent critical findings.
 
 ## Targets Page
 
-`pages/Targets.tsx`
-
-- [x] Target list with search across name, URL, IP, type and environment.
-- [x] Approved status (trusted lab vs self-declared).
-- [x] Target type.
-- [x] Previous scans (per-target scan count).
-- [x] Add approved target — via the Scans page "Register & scan" flow.
-- [x] Start scan.
+- [ ] Target list.
+- [ ] Approved status.
+- [ ] Target type.
+- [ ] Previous scans.
+- [ ] Add approved target.
+- [ ] Start scan.
 
 ## New Scan Page
 
-`pages/Scans.tsx`
-
-- [x] Select target (existing registered target or register a new one inline).
-- [~] Select detectors — one detector per run, chosen through the profile selector; no
-      multi-detector selection until a combined profile exists (see Section 2B).
-- [x] Select scan profile.
-- [x] Show safety boundary — trusted-host check and explicit authorization confirmation.
-- [x] Start scan, with live phase progress and polling until a terminal status.
+- [ ] Select target.
+- [ ] Select detectors.
+- [ ] Select scan profile.
+- [ ] Show safety boundary.
+- [ ] Start scan.
 
 ## Scan Detail
 
-- [x] Status.
-- [x] Start/end time.
-- [x] Duration.
-- [~] Detectors executed — the profile is shown; there is no per-detector execution list.
-- [x] Detector errors (`error_summary`).
-- [x] Findings (`GET /scans/{id}/findings`).
-- [~] Severity summary — available on the Findings page, not inline on the scan row.
+- [ ] Status.
+- [ ] Start/end time.
+- [ ] Duration.
+- [ ] Detectors executed.
+- [ ] Detector errors.
+- [ ] Findings.
+- [ ] Severity summary.
 
 ## Finding Detail
 
-`components/FindingCard.tsx`
-
-- [x] Vulnerability.
-- [x] Severity.
-- [x] Confidence.
-- [x] Validation status.
-- [x] Target.
-- [x] Endpoint/parameter.
-- [x] Technical description.
-- [x] Evidence (`components/EvidenceViewer.tsx`, `pages/Evidence.tsx`).
-- [x] CWE.
-- [x] CVE/CVSS where applicable.
-- [x] OWASP category where applicable.
-- [x] Remediation.
-- [x] Finding status.
-- [x] Status update (`PATCH /findings/{id}/status`).
+- [ ] Vulnerability.
+- [ ] Severity.
+- [ ] Confidence.
+- [ ] Validation status.
+- [ ] Target.
+- [ ] Endpoint/parameter.
+- [ ] Technical description.
+- [ ] Evidence.
+- [ ] CWE.
+- [ ] CVE/CVSS where applicable.
+- [ ] OWASP category where applicable.
+- [ ] Remediation.
+- [ ] Finding status.
+- [ ] Status update.
 
 ## History
 
-- [x] Previous scans (Scans page table).
+- [ ] Previous scans.
 - [ ] Compare scans.
 - [ ] New findings.
 - [ ] Recurring findings.
-- [ ] Remediated findings — status exists on a finding, but there is no cross-scan diff.
+- [ ] Remediated findings.
 
 ---
 
@@ -1984,47 +1872,42 @@ Within each trio, Sparsh, Sunil, and Nischal each protect their assigned detecto
 
 # 23. Weekly Completion Summary
 
-Progress markers reflect the state recorded in Section 2B (21 August 2026).
-
-## Week 1 — ✅ complete
+## Week 1
 **Foundation + auth scaffold complete**
 
-## Week 2 — 3/15 — ✅ complete
+## Week 2 — 3/15
 - Sparsh: SQL Injection
 - Sunil: Command Injection
 - Nischal: File Upload
 - *(Platform login/auth completed)*
 
-## Week 3 — 6/15 — ✅ complete
+## Week 3 — 6/15
 - Sparsh: XSS
 - Sunil: Weak Authentication
 - Nischal: JWT / Session Security
 
-## Week 4 — 9/15 — ✅ complete
+## Week 4 — 9/15
 - Sparsh: IDOR
 - Sunil: Sensitive Files
 - Nischal: Path Traversal
 - *(Dashboard MVP)*
 
-## Week 5 — 12/15 — ✅ complete
+## Week 5 — 12/15
 - Sparsh: SSRF
 - Sunil: Vulnerable Services
 - Nischal: CSRF
 - *(Full dashboard)*
 
-## Week 6 — 15/15 — ⚠️ detectors, integration, Docker and CI complete; **reporting outstanding**
+## Week 6 — 15/15
 - Sparsh: XXE
 - Sunil: Weak TLS
 - Nischal: Security Misconfiguration
 - *(Integration, reporting, Docker, CI/CD)*
 
-## Week 7 — ▶ in progress
+## Week 7
 **Validated release candidate**
 
-Blocked on the combined scan profile and a re-enabled Metasploitable 2 target before the
-duration/repeatability measurements in Section 10 can be produced.
-
-## Week 8 — ⏳ not started
+## Week 8
 **Final submission and demonstration**
 
 ---
@@ -2066,8 +1949,3 @@ Generate Report
 ```
 
 This lifecycle is the central implementation goal of VulnVista.
-
-**Lifecycle coverage as of 21 August 2026:** every step from *Login* through *Review / Update
-Remediation Status* is working end to end. *Re-scan* is possible by starting a new scan against
-the same target, but *Compare History* and *Generate Report* are not yet implemented — these are
-the two remaining gaps between the current build and the Week 8 delivery target.

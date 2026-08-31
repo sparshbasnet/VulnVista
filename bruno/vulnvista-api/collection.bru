@@ -1,0 +1,22 @@
+docs {
+  VulnVista API — one folder per vulnerability profile (15 total), each
+  containing a self-contained Create Target -> Start Scan -> Get Scan Status
+  -> Get Findings sequence against that profile's bundled zero-setup lab
+  target (DVWA, Juice Shop, Metasploitable2, or the TLS test host).
+
+  Setup:
+  1. Select the "Local" environment (top right) and fill in the "password"
+     secret with your INITIAL_ADMIN_PASSWORD from the repo's .env.
+  2. Run Auth/Login once — it stores the access token as a runtime variable
+     ({{accessToken}}) used by every other request in this collection.
+  3. Open any vulnerability folder and run its requests in order (their seq
+     numbers, 1-4). Each folder uses its own runtime variables
+     (e.g. cmdiTargetId/cmdiScanId for Command Injection) so they don't
+     collide and can be re-run independently in any order.
+
+  To point a folder at a different (authorized) target, edit its "Create
+  Target" request body's base_url — everything downstream keeps working
+  since it chains off the created target/scan IDs, not hardcoded values.
+  Non-lab hosts need "authorization_confirmed": true (already set) and must
+  not be on the backend's blocklist.
+}

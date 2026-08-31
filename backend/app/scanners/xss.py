@@ -16,7 +16,12 @@ from urllib.parse import urlencode, urljoin, urlparse
 
 import httpx
 
-from app.scanners.base import BaseDetector, DetectorResult, ScanContext
+from app.scanners.base import (
+    BaseDetector,
+    DetectorResult,
+    ScanContext,
+    scope_cfg_to_path,
+)
 from app.scanners.command_injection import (
     Candidate,
     _candidates_from_form,
@@ -24,38 +29,7 @@ from app.scanners.command_injection import (
     _explicit_candidate,
     parse_forms,
 )
-
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "request_timeout": 15.0,
-    "browser_timeout_ms": 10_000,
-    "max_candidates": 5,
-    "headless": True,
-    "browser_executable_path": "/usr/bin/chromium",
-}
-
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "dvwa": {
-        "login_path": "/login.php",
-        "login_submit_field": "Login",
-        "login_submit_value": "Login",
-        "username": "admin",
-        "password": "password",
-        "post_login_cookies": {"security": "low"},
-        "exec_path": "/vulnerabilities/xss_r/",
-        "parameter": "name",
-        "method": "GET",
-    },
-    # Juice Shop's search input is an Angular route, so it is invisible to
-    # server-rendered form discovery. The `q` value is deliberately passed to
-    # an [innerHTML] sink via bypassSecurityTrustHtml in the bundled lab.
-    "juice-shop": {
-        "exec_path": "/#/search",
-        "parameter": "q",
-        "method": "GET",
-    },
-}
-LAB_PRESETS["vulnvista_dvwa"] = LAB_PRESETS["dvwa"]
-LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
+from app.scanners.presets.xss import GENERIC_DEFAULTS, LAB_PRESETS
 
 
 class DetectorError(Exception):
@@ -113,6 +87,7 @@ class XSSDetector(BaseDetector):
         host = parsed.hostname or ""
         base = f"{parsed.scheme}://{parsed.netloc}"
         cfg = {**GENERIC_DEFAULTS, **LAB_PRESETS.get(host, {}), **context.extra}
+        scope_cfg_to_path(cfg, context, "exec_path", "injection_url")
         discovery_path = cfg.get("discovery_path") or parsed.path or "/"
 
         try:
@@ -245,11 +220,7 @@ class XSSDetector(BaseDetector):
 
         try:
             async with async_playwright() as playwright:
-                browser = await playwright.chromium.launch(
-                    headless=cfg["headless"],
-                    executable_path=cfg.get("browser_executable_path"),
-                    args=["--no-sandbox"],
-                )
+                browser = await playwright.chromium.launch(headless=cfg["headless"])
                 try:
                     browser_context = await browser.new_context(
                         ignore_https_errors=True,
@@ -367,26 +338,3 @@ class XSSDetector(BaseDetector):
             cwe="CWE-79",
             owasp_category="A03:2021 - Injection",
         )
-
-#
-# import asyncio
-# import json
-# import os
-
-
-# async def _main() -> None:
-#     target_url = os.getenv("XSS_TARGET_URL", "http://juice-shop:3000")
-
-#     result = await XSSDetector().check(
-#         ScanContext(
-#             target_id="manual-xss",
-#             base_url=target_url,
-#             timeout_seconds=300,
-#         )
-#     )
-
-#     print(json.dumps(result.__dict__, indent=2, default=str))
-
-
-# if __name__ == "__main__":
-#     asyncio.run(_main())

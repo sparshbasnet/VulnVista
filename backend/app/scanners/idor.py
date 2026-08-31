@@ -31,43 +31,7 @@ from urllib.parse import ParseResult, quote, urljoin, urlparse
 import httpx
 
 from app.scanners.base import BaseDetector, DetectorResult, ScanContext
-
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "request_timeout": 15.0,
-    "login_username_field": "username",
-    "login_password_field": "password",
-    "login_request_style": "form",
-    "register_request_style": "json",
-    "object_request_method": "GET",
-    "evidence_body_limit": 400,
-}
-
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "juice-shop": {
-        "login_path": "/rest/user/login",
-        "login_username_field": "email",
-        "login_password_field": "password",
-        "login_request_style": "json",
-        "token_json_path": "authentication.token",
-        "token_header": "Authorization",
-        "token_cookie": "token",
-        "object_id_json_path": "authentication.bid",
-        "object_path_template": "/rest/basket/{object_id}",
-        "owner_marker_json_path": "data.UserId",
-        "register_path": "/api/Users/",
-        "register_request_style": "json",
-        "register_password_repeat_field": "passwordRepeat",
-        "register_extra_fields": {
-            "securityQuestion": {"id": 1},
-            "securityAnswer": "vulnvista lab",
-        },
-        "user_a_username": "vulnvista.idor.a@lab.invalid",
-        "user_a_password": "VulnVistaLabA1!",
-        "user_b_username": "vulnvista.idor.b@lab.invalid",
-        "user_b_password": "VulnVistaLabB1!",
-    }
-}
-LAB_PRESETS["vulnvista_juice_shop"] = LAB_PRESETS["juice-shop"]
+from app.scanners.presets.idor import GENERIC_DEFAULTS, LAB_PRESETS
 
 # The detector only ever reads. Anything that could change or destroy a
 # laboratory object is rejected before a request is sent.
@@ -211,6 +175,7 @@ class IDORDetector(BaseDetector):
     detector_id = "idor"
     name = "Broken Access Control / IDOR"
     vulnerability_type = "idor"
+    scan_scope = "host"
     supported_targets = ["webapp"]
 
     async def check(self, context: ScanContext) -> DetectorResult:
@@ -604,26 +569,3 @@ class IDORDetector(BaseDetector):
             cwe="CWE-639",
             owasp_category="A01:2021 - Broken Access Control",
         )
-
-###
-# import asyncio
-# import json
-# import os
-
-
-# async def _main() -> None:
-#     target_url = os.getenv("IDOR_TARGET_URL", "http://juice-shop:3000")
-
-#     result = await IDORDetector().check(
-#         ScanContext(
-#             target_id="manual-xss",
-#             base_url=target_url,
-#             timeout_seconds=300,
-#         )
-#     )
-
-#     print(json.dumps(result.__dict__, indent=2, default=str))
-
-
-# if __name__ == "__main__":
-#     asyncio.run(_main())

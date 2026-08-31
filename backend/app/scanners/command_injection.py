@@ -23,17 +23,27 @@ wins over both the generic defaults and the lab preset.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
 import secrets
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 
 import httpx
 
-from app.scanners.base import BaseDetector, DetectorResult, ScanContext
+from app.scanners.base import (
+    BaseDetector,
+    DetectorResult,
+    ScanContext,
+    scope_cfg_to_path,
+)
+from app.scanners.presets.command_injection import GENERIC_DEFAULTS, LAB_PRESETS
+
+logger = logging.getLogger(__name__)
 
 # Tuning constants for the time-based signal.
 SLEEP_SECONDS = 5
@@ -41,34 +51,6 @@ SLEEP_SECONDS = 5
 # `ping -c 4`), so we compare *deltas* rather than absolute time. Require most
 # of the injected sleep to show up before we trust the blind signal.
 TIME_THRESHOLD_MS = 4000
-
-# Target-agnostic tuning only. Everything target-specific lives in
-# LAB_PRESETS or is supplied by the caller via ScanContext.extra.
-GENERIC_DEFAULTS: dict[str, Any] = {
-    "benign_value": "127.0.0.1",
-    "separator": ";",
-    "request_timeout": 20.0,
-    "max_candidates": 5,
-}
-
-# Convenience presets for the bundled lab containers, keyed by hostname, so
-# the DVWA quick-start keeps working with zero configuration. Anything not
-# listed here falls back to auto-discovery.
-LAB_PRESETS: dict[str, dict[str, Any]] = {
-    "dvwa": {
-        "login_path": "/login.php",
-        "login_submit_field": "Login",
-        "login_submit_value": "Login",
-        "exec_path": "/vulnerabilities/exec/",
-        "parameter": "ip",
-        "submit_field": "Submit",
-        "submit_value": "Submit",
-        "username": "admin",
-        "password": "password",
-        "post_login_cookies": {"security": "low"},
-    },
-}
-LAB_PRESETS["vulnvista_dvwa"] = LAB_PRESETS["dvwa"]
 
 _PRE_BLOCK_RE = re.compile(r"<pre[^>]*>(.*?)</pre>", re.IGNORECASE | re.DOTALL)
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -260,6 +242,92 @@ def classify(marker_reflected: bool, time_delta_ms: float, threshold_ms: float) 
     )
 
 
+# --- Optional OWASP ZAP cross-check -----------------------------------------
+#
+# Opt-in (``ScanContext.extra['use_zap']``): runs ZAP's active scanner — an
+# independent engine with its own OS-command-injection payload library (scan
+# rule 90020) — against the same endpoint/parameter the manual probes already
+# identified, purely as a second opinion. Manual evidence always stands on its
+# own; ZAP either raises confidence when it agrees or is reported as a
+# disagreement, never silently overrides what the manual probes already proved.
+# Requires the separate `tools/docker-compose.yml` ZAP service to be running
+# and reachable — if it isn't, the cross-check is skipped and the manual result
+# is returned as-is. Mirrors the SQL-injection detector's cross-check.
+
+ZAP_CMDI_CWE = "78"
+ZAP_CMDI_PLUGIN_ID = "90020"  # ZAP's "Remote OS Command Injection" active scan rule
+ZAP_DEFAULT_TIMEOUT_SECONDS = 90.0
+ZAP_POLL_INTERVAL_SECONDS = 2.0
+
+
+def _is_cmdi_alert(alert: dict[str, Any]) -> bool:
+    if str(alert.get("cweid", "")) == ZAP_CMDI_CWE:
+        return True
+    if str(alert.get("pluginId", "")) == ZAP_CMDI_PLUGIN_ID:
+        return True
+    return "command injection" in str(alert.get("alert", "")).lower()
+
+
+@dataclass
+class ZapOutcome:
+    used: bool
+    reachable: bool
+    completed: bool
+    detected: bool
+    alerts: list[dict[str, Any]]
+    note: str
+
+    def to_evidence(self) -> dict[str, Any]:
+        return {
+            "used": self.used,
+            "reachable": self.reachable,
+            "scan_completed": self.completed,
+            "detected": self.detected,
+            "alert_count": len(self.alerts),
+            "alerts": [
+                {
+                    "name": a.get("alert"),
+                    "risk": a.get("risk"),
+                    "confidence": a.get("confidence"),
+                    "param": a.get("param"),
+                    "cweid": a.get("cweid"),
+                    "evidence": a.get("evidence"),
+                }
+                for a in self.alerts[:5]
+            ],
+            "note": self.note,
+        }
+
+
+def combine_with_zap(
+    manual_detected: bool,
+    manual_confidence: str,
+    zap_used: bool,
+    zap_reachable: bool,
+    zap_detected: bool,
+) -> tuple[bool, str, str]:
+    """Fold an optional ZAP cross-check into the manual result, returning
+    (detected, validation_status, confidence).
+
+    Kept pure (no I/O) so the merge policy can be unit-tested directly.
+    Manual evidence always stands: if ZAP wasn't used or isn't reachable,
+    the manual verdict passes through completely unchanged.
+    """
+    if not zap_used or not zap_reachable:
+        return (
+            manual_detected,
+            ("CONFIRMED" if manual_detected else "NOT_DETECTED"),
+            manual_confidence,
+        )
+    if manual_detected and zap_detected:
+        return True, "CONFIRMED", "HIGH"
+    if manual_detected and not zap_detected:
+        return True, "CONFIRMED", manual_confidence
+    if not manual_detected and zap_detected:
+        return True, "CONFIRMED", "MEDIUM"
+    return False, "NOT_DETECTED", "LOW"
+
+
 class CommandInjectionDetector(BaseDetector):
     detector_id = "command_injection"
     name = "OS Command Injection"
@@ -270,6 +338,7 @@ class CommandInjectionDetector(BaseDetector):
         host = parsed.hostname or ""
         base = f"{parsed.scheme}://{parsed.netloc}"
         cfg = {**GENERIC_DEFAULTS, **LAB_PRESETS.get(host, {}), **context.extra}
+        scope_cfg_to_path(cfg, context, "exec_path", "injection_url")
         discovery_path = cfg.get("discovery_path") or parsed.path or "/"
 
         try:
@@ -318,6 +387,139 @@ class CommandInjectionDetector(BaseDetector):
                 context, f"Could not reach the target ({type(exc).__name__}: {exc})."
             )
 
+    async def validate(self, context: ScanContext, result: DetectorResult) -> DetectorResult:
+        """Optional OWASP ZAP cross-check — see the "Optional OWASP ZAP
+        cross-check" section for ``ScanContext.extra['use_zap']``. Never raises:
+        any failure reaching or running ZAP degrades to "cross-check
+        unavailable", leaving the manual result exactly as ``check()`` produced
+        it."""
+        if not context.extra.get("use_zap") or result.validation_status == "ERROR":
+            return result
+
+        zap = await self._run_zap_cross_check(context, result)
+        detected, validation_status, confidence = combine_with_zap(
+            manual_detected=result.detected,
+            manual_confidence=result.confidence,
+            zap_used=zap.used,
+            zap_reachable=zap.reachable,
+            zap_detected=zap.detected,
+        )
+
+        if not zap.reachable:
+            note = f" OWASP ZAP cross-check requested but unavailable: {zap.note}."
+        elif result.detected and zap.detected:
+            note = (
+                " OWASP ZAP's active scanner independently confirmed OS command injection "
+                "on this endpoint."
+            )
+        elif result.detected and not zap.detected:
+            note = " OWASP ZAP's active scanner did not corroborate this — manual evidence stands."
+        elif not result.detected and zap.detected:
+            note = (
+                " Manual probing found nothing, but OWASP ZAP's active scanner flagged command "
+                "injection here — recommend manual follow-up."
+            )
+        else:
+            note = " OWASP ZAP's active scanner also found nothing."
+
+        return replace(
+            result,
+            detected=detected,
+            validation_status=validation_status,
+            confidence=confidence,
+            severity="CRITICAL" if detected else result.severity,
+            cvss_score=9.8 if detected else result.cvss_score,
+            evidence_summary=(result.evidence_summary or "") + note,
+            evidence={**result.evidence, "zap": zap.to_evidence()},
+        )
+
+    async def _run_zap_cross_check(
+        self, context: ScanContext, result: DetectorResult
+    ) -> ZapOutcome:
+        try:
+            from app.services.zap_client import zap_client
+        except Exception as exc:  # missing dependency, bad config, etc.
+            logger.warning("ZAP cross-check unavailable: %s", exc)
+            return ZapOutcome(True, False, False, False, [], f"ZAP client unavailable ({exc})")
+
+        if not result.endpoint or not result.parameter:
+            return ZapOutcome(True, False, False, False, [], "no endpoint/parameter to hand to ZAP")
+
+        loop = asyncio.get_running_loop()
+        timeout_seconds = float(
+            context.extra.get("zap_timeout_seconds", ZAP_DEFAULT_TIMEOUT_SECONDS)
+        )
+
+        try:
+            reachable = await loop.run_in_executor(None, zap_client.is_ready)
+        except Exception as exc:
+            return ZapOutcome(True, False, False, False, [], f"ZAP health check failed ({exc})")
+        if not reachable:
+            return ZapOutcome(
+                True, False, False, False, [], "ZAP daemon not reachable at the configured API URL"
+            )
+
+        method = str(result.evidence.get("method", "GET")).upper()
+        fixed_fields = result.evidence.get("fixed_fields") or {}
+        baseline_value = result.evidence.get("payloads", {}).get("baseline", "127.0.0.1")
+        params = {**fixed_fields, result.parameter: baseline_value}
+
+        try:
+            if method == "GET":
+                scan_id = await loop.run_in_executor(
+                    None,
+                    lambda: zap_client.zap.ascan.scan(url=f"{result.endpoint}?{urlencode(params)}"),
+                )
+            else:
+                scan_id = await loop.run_in_executor(
+                    None,
+                    lambda: zap_client.zap.ascan.scan(
+                        url=result.endpoint, method=method, postdata=urlencode(params)
+                    ),
+                )
+        except Exception as exc:
+            return ZapOutcome(
+                True, True, False, False, [], f"could not start ZAP active scan ({exc})"
+            )
+
+        completed = False
+        started = loop.time()
+        try:
+            while True:
+                status = await loop.run_in_executor(
+                    None, lambda: zap_client.zap.ascan.status(scan_id)
+                )
+                if int(status) >= 100:
+                    completed = True
+                    break
+                if loop.time() - started >= timeout_seconds:
+                    break
+                await asyncio.sleep(ZAP_POLL_INTERVAL_SECONDS)
+        except Exception as exc:
+            return ZapOutcome(
+                True, True, False, False, [], f"ZAP active scan polling failed ({exc})"
+            )
+
+        try:
+            alerts = await loop.run_in_executor(
+                None, lambda: zap_client.zap.core.alerts(baseurl=result.endpoint)
+            )
+        except Exception as exc:
+            return ZapOutcome(
+                True, True, completed, False, [], f"could not retrieve ZAP alerts ({exc})"
+            )
+
+        cmdi_alerts = [a for a in alerts if _is_cmdi_alert(a)]
+        note = (
+            "scan completed"
+            if completed
+            else (
+                f"scan did not finish within {timeout_seconds:.0f}s — "
+                "reporting alerts found so far"
+            )
+        )
+        return ZapOutcome(True, True, completed, bool(cmdi_alerts), cmdi_alerts, note)
+
     async def _authenticate(
         self, client: httpx.AsyncClient, base: str, host: str, cfg: dict[str, Any]
     ) -> None:
@@ -348,7 +550,7 @@ class CommandInjectionDetector(BaseDetector):
         if "setup.php" in final_url:
             raise DetectorError(
                 "DVWA's database is not initialized. In your browser open DVWA's setup page "
-                "(e.g. http://localhost:8081/setup.php) and click 'Create / Reset Database', "
+                "(e.g. http://localhost:8080/setup.php) and click 'Create / Reset Database', "
                 "then run the scan again."
             )
         if cfg["login_path"] in final_url or "login failed" in resp.text.lower():
@@ -424,6 +626,8 @@ class CommandInjectionDetector(BaseDetector):
         evidence = {
             "marker": marker,
             "marker_reflected": marker_reflected,
+            "method": candidate.method,
+            "fixed_fields": candidate.fixed_fields,
             "output_snippet": output[:500],
             "baseline_ms": round(baseline_ms, 1),
             "marker_probe_ms": round(marker_ms, 1),
