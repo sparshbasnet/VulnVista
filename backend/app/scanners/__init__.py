@@ -10,11 +10,18 @@ from app.scanners.base import BaseDetector, DetectorResult, ScanContext
 from app.scanners.command_injection import CommandInjectionDetector
 from app.scanners.csrf import CSRFDetector
 from app.scanners.file_upload import FileUploadDetector
+from app.scanners.idor import IDORDetector
+from app.scanners.jwt_session import JWTSessionDetector
+from app.scanners.misconfiguration import MisconfigurationDetector
 from app.scanners.path_traversal import PathTraversalDetector
 from app.scanners.sensitive_files import SensitiveFilesDetector
+from app.scanners.sqli_detector import SQLiDetector
+from app.scanners.ssrf import SSRFDetector
 from app.scanners.vulnerable_services import VulnerableServicesDetector
 from app.scanners.weak_auth import WeakAuthDetector
 from app.scanners.weak_tls import WeakTLSDetector
+from app.scanners.xss import XSSDetector
+from app.scanners.xxe import XXEDetector
 
 # detector_id -> singleton instance
 DETECTOR_REGISTRY: dict[str, BaseDetector] = {
@@ -27,6 +34,13 @@ DETECTOR_REGISTRY: dict[str, BaseDetector] = {
         SensitiveFilesDetector(),
         VulnerableServicesDetector(),
         FileUploadDetector(),
+        JWTSessionDetector(),
+        MisconfigurationDetector(),
+        SQLiDetector(),
+        XSSDetector(),
+        XXEDetector(),
+        IDORDetector(),
+        SSRFDetector(),
         WeakTLSDetector(),
     )
 }
@@ -41,6 +55,13 @@ SCAN_PROFILES: dict[str, list[str]] = {
     "sensitive_files": ["sensitive_files"],
     "vulnerable_services": ["vulnerable_services"],
     "file_upload": ["file_upload"],
+    "jwt_session": ["jwt_session"],
+    "misconfiguration": ["misconfiguration"],
+    "sqli_detector": ["sqli_detector"],
+    "xss": ["xss"],
+    "xxe": ["xxe"],
+    "idor": ["idor"],
+    "ssrf": ["ssrf"],
     "weak_tls": ["weak_tls"],
 }
 

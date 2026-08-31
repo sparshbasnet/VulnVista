@@ -49,7 +49,7 @@ export const api = {
   allowTarget: (targetId: string) => request<Target>(`/targets/${targetId}/allow`, { method: "PATCH" }),
   listScans: () => request<Scan[]>("/scans"),
   getScan: (id: string) => request<Scan>(`/scans/${id}`),
-  createScan: (payload: { target_id: string; scan_profile?: string }) =>
+  createScan: (payload: { target_id: string; scan_profile?: string; use_zap?: boolean }) =>
     request<Scan>("/scans", { method: "POST", body: JSON.stringify(payload) }),
   getScanFindings: (id: string) => request<Finding[]>(`/scans/${id}/findings`),
   listFindings: (params?: { target_id?: string; severity?: string }) => {

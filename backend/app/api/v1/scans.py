@@ -43,7 +43,7 @@ async def create_scan(
         )
 
     scan = Scan(
-        **payload.model_dump(exclude={"initiated_by"}),
+        **payload.model_dump(exclude={"initiated_by", "use_zap"}),
         initiated_by=current_user.username,
     )
 
@@ -58,6 +58,7 @@ async def create_scan(
         scan=scan,
         target=target,
         detectors=detectors,
+        use_zap=payload.use_zap,
     )
 
     return scan

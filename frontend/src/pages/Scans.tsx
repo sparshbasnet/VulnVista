@@ -14,6 +14,13 @@ const POLL_INTERVAL_MS = 1500;
 // a 15-minute internal ceiling against a busy target) plus per-service NVD/searchsploit
 // lookups afterward — the other profiles finish in seconds regardless of this ceiling.
 const MAX_POLLS = 800;
+const ZAP_SUPPORTED_PROFILES = new Set<ProfileId>([
+  "csrf",
+  "path_traversal",
+  "jwt_session",
+  "file_upload",
+  "misconfiguration",
+]);
 
 type PhaseState = "active" | "done" | "error";
 interface Phase {
@@ -21,13 +28,20 @@ interface Phase {
   state: PhaseState;
 }
 type ProfileId =
+  | "sqli_detector"
   | "command_injection"
+  | "xss"
   | "csrf"
   | "path_traversal"
+  | "idor"
+  | "jwt_session"
   | "weak_auth"
   | "sensitive_files"
   | "vulnerable_services"
   | "file_upload"
+  | "misconfiguration"
+  | "ssrf"
+  | "xxe"
   | "weak_tls";
 interface ProfileConfig {
   label: string;
@@ -40,6 +54,17 @@ interface ProfileConfig {
 }
 
 const PROFILES: Record<ProfileId, ProfileConfig> = {
+  sqli_detector: {
+    label: "SQL Injection (ZAP)",
+    targetType: "juice-shop",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Scan for SQL injection",
+    scanningLabel: "Running the focused ZAP SQL-injection rules…",
+    noFindingLabel: "No SQL injection detected on this target",
+    help:
+      "Seeds the authorized JSON login endpoint and runs only ZAP's SQL-injection rules. " +
+      "The bundled Juice Shop path works by default; use Advanced to override the login path.",
+  },
   command_injection: {
     label: "Command Injection",
     targetType: "webapp",
@@ -52,6 +77,17 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "or query parameter to probe, then confirms OS command injection with output-marker " +
       "and time-based signals. Use Advanced below for a login, a session cookie, or an exact " +
       "parameter to target. http://dvwa is a bundled lab target requiring no setup.",
+  },
+  xss: {
+    label: "Cross-Site Scripting (XSS)",
+    targetType: "webapp",
+    defaultUrl: "http://dvwa",
+    buttonLabel: "Scan for XSS",
+    scanningLabel: "Submitting a harmless canary and validating it in Chromium…",
+    noFindingLabel: "No browser-confirmed XSS detected on this target",
+    help:
+      "Uses a harmless DOM canary and records a finding only when Chromium confirms script " +
+      "execution. DVWA and Juice Shop have lab presets; other apps can use Advanced inputs.",
   },
   csrf: {
     label: "Cross-Site Request Forgery (CSRF)",
@@ -74,6 +110,29 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
     help:
       "Uses a target-specific safe probe against the bundled DVWA or Juice Shop lab and " +
       "records confirmed evidence only when the expected lab marker is returned.",
+  },
+  jwt_session: {
+    label: "JWT / Session Security",
+    targetType: "webapp",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Inspect JWT and session controls",
+    scanningLabel: "Inspecting token metadata and session-cookie controls…",
+    noFindingLabel: "No JWT or session weakness detected from the supplied authentication state",
+    help:
+      "Passively checks a JWT supplied as a cookie, or authentication cookies returned by " +
+      "the target, for unsigned tokens, excessive lifetime, and missing Secure, HttpOnly, or " +
+      "SameSite protections. Add an authenticated cookie under Advanced for protected apps.",
+  },
+  idor: {
+    label: "Broken Access Control / IDOR",
+    targetType: "juice-shop",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Test object-level authorization",
+    scanningLabel: "Comparing read-only access across two synthetic accounts…",
+    noFindingLabel: "No cross-account object access detected",
+    help:
+      "Creates or reuses two synthetic Juice Shop lab accounts, reads each account's own " +
+      "basket, then verifies whether one account can read the other's basket. No records are modified.",
   },
   weak_auth: {
     label: "Weak Authentication (Juice Shop)",
@@ -125,6 +184,40 @@ const PROFILES: Record<ProfileId, ProfileConfig> = {
       "For the bundled DVWA lab, the scanner signs in with its seeded lab account and " +
       "inspects the upload form for browser-visible type restrictions. It does not upload " +
       "or execute a file. Use a session cookie in Advanced for another authorized app.",
+  },
+  misconfiguration: {
+    label: "Security Misconfiguration",
+    targetType: "webapp",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Check security configuration",
+    scanningLabel: "Checking security headers, CORS, and version disclosure…",
+    noFindingLabel: "No tested security misconfiguration detected on this target",
+    help:
+      "Uses safe GET and CORS preflight requests to verify browser security headers, HTTPS " +
+      "transport policy, cross-origin access, and server version disclosure. No files, " +
+      "credentials, or application state are modified.",
+  },
+  ssrf: {
+    label: "Server-Side Request Forgery (SSRF)",
+    targetType: "juice-shop",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Test server-side URL fetching",
+    scanningLabel: "Waiting for the controlled local callback…",
+    noFindingLabel: "No controlled SSRF callback received",
+    help:
+      "Supplies Juice Shop's image importer with a unique callback URL hosted by the backend. " +
+      "It never requests cloud metadata, loopback services, or third-party systems.",
+  },
+  xxe: {
+    label: "XML External Entity (XXE)",
+    targetType: "juice-shop",
+    defaultUrl: "http://juice-shop:3000",
+    buttonLabel: "Test XML entity handling",
+    scanningLabel: "Submitting controlled external-entity probes…",
+    noFindingLabel: "No external entity resolution detected",
+    help:
+      "Uses a local callback and the non-sensitive /etc/os-release marker to prove entity " +
+      "resolution. The Juice Shop B2B upload endpoint is selected by its lab preset.",
   },
   weak_tls: {
     label: "Weak TLS Configuration",
@@ -194,6 +287,7 @@ export default function Scans() {
   const [advCookie, setAdvCookie] = useState("");
   const [advParameter, setAdvParameter] = useState("");
   const [advPath, setAdvPath] = useState("");
+  const [useZap, setUseZap] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -235,6 +329,7 @@ export default function Scans() {
       setUrl(PROFILES[next].defaultUrl);
     }
     setProfile(next);
+    if (!ZAP_SUPPORTED_PROFILES.has(next)) setUseZap(false);
     setSelectedTargetId("NEW");
     setAuthorized(false);
     setAuthorizationScope("");
@@ -343,6 +438,7 @@ export default function Scans() {
       let current = await api.createScan({
         target_id: target.id,
         scan_profile: profile,
+        use_zap: useZap && ZAP_SUPPORTED_PROFILES.has(profile),
       });
       upsertScan(current);
       finish(p3, "done", `Scan ${current.id.slice(0, 8)} launched`);
@@ -527,9 +623,24 @@ export default function Scans() {
               </details>
 
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d0ccc7] pt-4">
-                <p className="text-[9px] font-bold uppercase tracking-wide text-[#676360]">
-                  Output: finding record + structured evidence
-                </p>
+                <label className="flex min-h-10 items-center gap-3">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={useZap}
+                    disabled={!ZAP_SUPPORTED_PROFILES.has(profile) || busy}
+                    onChange={(event) => setUseZap(event.target.checked)}
+                    className="h-4 w-4 shrink-0 accent-[#f0321d] disabled:opacity-40"
+                  />
+                  <span>
+                    <strong className="block text-[9px] uppercase tracking-wide">Use ZAP validation</strong>
+                    <span className="block text-[9px] text-[#676360]">
+                      {ZAP_SUPPORTED_PROFILES.has(profile)
+                        ? "Run an additional passive ZAP check"
+                        : "Available for your five detector profiles"}
+                    </span>
+                  </span>
+                </label>
                 <button
                   type="submit"
             disabled={busy || !canScanTarget}

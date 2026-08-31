@@ -834,20 +834,20 @@ Weak authentication controls are demonstrated using synthetic accounts or approv
 ### Tasks
 
 - [ ] Obtain controlled laboratory JWT/session.
-- [ ] Parse JWT header and claims.
-- [ ] Check expiration claims.
-- [ ] Check important token properties.
+- [x] Parse JWT header and claims.
+- [x] Check expiration claims.
+- [x] Check important token properties.
 - [ ] Submit malformed token.
 - [ ] Submit expired test token where supported.
 - [ ] Test controlled token modification.
 - [ ] Verify invalid signatures are rejected.
-- [ ] Check session handling relevant to the target.
+- [x] Check session handling relevant to the target.
 - [ ] Never use real credentials/tokens.
-- [ ] Capture claims and responses safely.
-- [ ] Mask sensitive values in logs.
-- [ ] Add severity/confidence.
-- [ ] Add CWE/remediation.
-- [ ] Integrate detector.
+- [x] Capture claims and responses safely.
+- [x] Mask sensitive values in logs.
+- [x] Add severity/confidence.
+- [x] Add CWE/remediation.
+- [x] Integrate detector.
 
 ### Acceptance Criteria
 
@@ -1144,17 +1144,17 @@ The detector correctly identifies intentionally configured weak TLS characterist
 
 ### Tasks
 
-- [ ] Check security headers.
-- [ ] Check cookie security attributes.
+- [x] Check security headers.
+- [x] Check cookie security attributes.
 - [ ] Check exposed directory listing.
 - [ ] Check default pages.
 - [ ] Check debug/error-information leakage.
 - [ ] Check obviously unsafe exposed services.
-- [ ] Define each check separately.
-- [ ] Avoid reporting purely informational items as high severity.
-- [ ] Store individual evidence.
-- [ ] Add confidence/remediation.
-- [ ] Integrate detector.
+- [x] Define each check separately.
+- [x] Avoid reporting purely informational items as high severity.
+- [x] Store individual evidence.
+- [x] Add confidence/remediation.
+- [x] Integrate detector.
 
 ### Acceptance Criteria
 
@@ -1882,7 +1882,7 @@ The project is complete when:
 - [ ] File-upload detector works. *(Nischal)*
 - [ ] XSS detector works. *(Sparsh)*
 - [ ] Weak-authentication detector works. *(Sunil)*
-- [ ] JWT/session detector works. *(Nischal)*
+- [x] JWT/session detector works. *(Nischal)*
 - [ ] IDOR detector works. *(Sparsh)*
 - [ ] Sensitive-file exposure detector works. *(Sunil)*
 - [ ] Path traversal detector works. *(Nischal)*
@@ -1891,7 +1891,7 @@ The project is complete when:
 - [ ] CSRF detector works. *(Nischal)*
 - [ ] XXE detector works. *(Sparsh)*
 - [ ] Weak-TLS detector works. *(Sunil)*
-- [ ] Security-misconfiguration detector works. *(Nischal)*
+- [x] Security-misconfiguration detector works. *(Nischal)*
 - [ ] All detector outputs use a common schema.
 - [ ] Findings are stored in PostgreSQL.
 - [ ] Evidence is retained.

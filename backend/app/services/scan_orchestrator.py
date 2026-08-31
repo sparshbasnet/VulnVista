@@ -9,6 +9,7 @@ from app.models.finding import Evidence, Finding
 from app.models.scan import Scan, ScanStatus
 from app.models.target import Target
 from app.scanners.base import BaseDetector, ScanContext
+from app.scanners.zap_validation import corroborate_with_zap
 
 
 async def run_scan(
@@ -16,6 +17,7 @@ async def run_scan(
     scan: Scan,
     target: Target,
     detectors: Sequence[BaseDetector],
+    use_zap: bool = False,
 ) -> Scan:
     """Run the selected detectors against one approved target."""
 
@@ -24,6 +26,7 @@ async def run_scan(
 
     try:
         scan_config = dict(target.scan_config or {})
+        scan_config["use_zap"] = use_zap
         if "vulnvista_dvwa" in (target.base_url or ""):
             headers = dict(scan_config.get("headers", {}))
             headers.setdefault("Host", "localhost")
@@ -46,7 +49,8 @@ async def run_scan(
                         pages_scanned,
                         int(result.evidence.get("pages_crawled", 0)),
                     )
-                    # Optional secondary validation.
+                    result = await corroborate_with_zap(detector.detector_id, context, result)
+                    # Optional detector-specific secondary validation.
                     result = await detector.validate(result)
 
                     # Only create a finding when something was detected.
