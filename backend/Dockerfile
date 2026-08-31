@@ -18,7 +18,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 # offline option that still has the full CVE/EDB-ID cross-reference data.
 # github.com/offensive-security/exploitdb is now a legacy pointer repo (near-
 # empty) — the actively maintained one is on GitLab.
-RUN apt-get update && apt-get install -y --no-install-recommends nmap git \
+RUN apt-get update && apt-get install -y --no-install-recommends nmap git chromium \
     && git clone --depth 1 https://gitlab.com/exploit-database/exploitdb /opt/exploitdb \
     && ln -s /opt/exploitdb/searchsploit /usr/local/bin/searchsploit \
     && rm -rf /var/lib/apt/lists/*
