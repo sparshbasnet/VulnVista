@@ -68,6 +68,7 @@ services:
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
       - ./backend/scripts:/app/scripts
+      - ./backend/alembic:/app/alembic
       # Scan evidence / uploaded files persisted on the host, not in the container layer.
       - ${BACKEND_STORAGE_DIR:-./storage/uploads}:/data/uploads
       
