@@ -25,7 +25,7 @@ async def create_scan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_operator),
 ) -> Scan:
-    target = await db.get(Target, payload.target_id)
+    target = await db.get(Target, payload.target_id, with_for_update=True)
     if target is None:
         raise HTTPException(status_code=404, detail="Target not found")
     if not target.is_allowed:

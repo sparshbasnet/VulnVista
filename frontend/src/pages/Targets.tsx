@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import PageHeader from "../components/PageHeader";
 import { useAppData } from "../hooks/useAppData";
 import type { Target } from "../types";
+import { useAuth } from "../auth/useAuth";
+import { api } from "../services/api";
 
 function authorizationLabel(target: Target): string {
   if (target.is_allowed && !target.authorization_confirmed) return "Trusted lab";
@@ -27,6 +29,23 @@ function Stat({ label, value, signal = false }: { label: string; value: number; 
 export default function Targets() {
   const { targets, scans, findings, loading, error, refresh } = useAppData();
   const [query, setQuery] = useState("");
+  const { canOperate } = useAuth();
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function deleteTarget(target: Target) {
+    if (!window.confirm(`Delete "${target.name}"? This permanently removes its scans, findings, evidence records, and path discoveries. This cannot be undone.`)) return;
+    setDeleting(target.id);
+    setDeleteError(null);
+    try {
+      await api.deleteTarget(target.id);
+      await refresh();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeleting(null);
+    }
+  }
   const normalized = query.trim().toLowerCase();
   const visible = useMemo(
     () =>
@@ -64,6 +83,7 @@ export default function Targets() {
           <button type="button" onClick={refresh} className="font-black uppercase tracking-wide hover:underline">Try again</button>
         </div>
       )}
+      {deleteError && <p role="alert" className="border-b border-[#b91f10] bg-[#fff1ef] px-5 py-3 text-xs text-[#8f190e]">{deleteError}</p>}
 
       <section className="grid grid-cols-2 gap-px border-b border-[#aaa6a1] bg-[#aaa6a1] sm:grid-cols-4">
         <Stat label="Target records" value={targets.length} />
@@ -96,6 +116,7 @@ export default function Targets() {
                 <th>Risk load</th>
                 <th>Scans</th>
                 <th>Last activity</th>
+                {canOperate && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -130,14 +151,22 @@ export default function Targets() {
                       <p className="text-[10px] font-bold">{formatDate(last?.created_at ?? target.created_at)}</p>
                       <p className="mt-1 text-[9px] uppercase text-[#676360]">{last?.status ?? "Registered"}</p>
                     </td>
+                    {canOperate && <td>
+                      <button type="button" className="vv-button-secondary text-[#a61b0d]"
+                        aria-label={`Delete ${target.name}`}
+                        disabled={deleting !== null || targetScans.some((scan) => scan.status === "QUEUED" || scan.status === "RUNNING")}
+                        onClick={() => deleteTarget(target)}>
+                        {deleting === target.id ? "Deleting…" : "Delete"}
+                      </button>
+                    </td>}
                   </tr>
                 );
               })}
               {!loading && visible.length === 0 && (
-                <tr><td colSpan={6} className="py-12 text-center text-[#676360]">No targets match this search.</td></tr>
+                <tr><td colSpan={canOperate ? 7 : 6} className="py-12 text-center text-[#676360]">No targets match this search.</td></tr>
               )}
               {loading && targets.length === 0 && (
-                <tr><td colSpan={6} className="py-12 text-center text-[#676360]">Loading targets…</td></tr>
+                <tr><td colSpan={canOperate ? 7 : 6} className="py-12 text-center text-[#676360]">Loading targets…</td></tr>
               )}
             </tbody>
           </table>

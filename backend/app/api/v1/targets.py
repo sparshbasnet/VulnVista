@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth_deps import require_operator
 from app.api.deps import get_db
 from app.core.config import get_settings
+from app.models.discovery import Discovery, DiscoveryStatus
+from app.models.scan import Scan, ScanStatus
 from app.models.target import Target
 from app.schemas.target import TargetCreate, TargetRead
 
@@ -132,3 +134,42 @@ async def get_target(target_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -
     if target is None:
         raise HTTPException(status_code=404, detail="Target not found")
     return target
+
+
+@router.delete("/{target_id}", status_code=204)
+async def delete_target(
+    target_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(require_operator),
+) -> Response:
+    # Scan/discovery creation takes the same lock so no job can be queued between
+    # the activity check and deletion. Existing FK cascades remove dependent rows.
+    target = await db.get(Target, target_id, with_for_update=True)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Target not found")
+    active_scan = await db.scalar(
+        select(Scan.id)
+        .where(
+            Scan.target_id == target_id, Scan.status.in_([ScanStatus.QUEUED, ScanStatus.RUNNING])
+        )
+        .limit(1)
+    )
+    active_discovery = await db.scalar(
+        select(Discovery.id)
+        .where(
+            Discovery.target_id == target_id,
+            Discovery.status.in_([DiscoveryStatus.QUEUED, DiscoveryStatus.RUNNING]),
+        )
+        .limit(1)
+    )
+    if active_scan or active_discovery:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Wait for this target's active scans and path discoveries "
+                "to finish before deleting it."
+            ),
+        )
+    await db.delete(target)
+    await db.commit()
+    return Response(status_code=204)

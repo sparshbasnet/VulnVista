@@ -27,8 +27,7 @@ services:
       -config api.key=${ZAP_API_KEY:-vulnvista-dev-key}
       -config api.disablekey=false
       -config network.localServers.mainProxy.behindNat=false
-    ports:
-      - "8090:8080"
+    # Internal service only: the backend reaches ZAP at http://zap:8080.
     networks:
       - vulnvista_net
     restart: unless-stopped

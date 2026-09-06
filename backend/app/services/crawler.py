@@ -6,8 +6,9 @@ breadth-first, staying on the target host, and returns a flat list of
 discovered paths with lightweight metadata. The frontend nests these into a
 tree; the operator then picks which paths are in-scope before scanning.
 
-Detection/attack logic lives in the detectors — this module only enumerates
-surface area, so it never submits forms or sends payloads.
+Detection/attack logic lives in the detectors. This module only enumerates
+surface area and submits a configured login form; it never submits exercise
+forms or generates attack payloads.
 """
 
 from __future__ import annotations
@@ -35,9 +36,29 @@ DEFAULT_TIMEOUT = 15.0
 # schemes (mailto:, javascript:, tel:, #fragments).
 _SKIP_SCHEMES = ("mailto:", "javascript:", "tel:", "data:", "#")
 _ASSET_SUFFIXES = (
-    ".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".woff",
-    ".woff2", ".ttf", ".eot", ".pdf", ".zip", ".gz", ".mp4", ".webp", ".map",
+    ".css",
+    ".js",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".pdf",
+    ".zip",
+    ".gz",
+    ".mp4",
+    ".webp",
+    ".map",
 )
+
+
+class CrawlError(RuntimeError):
+    """A discovery could not reach any usable page."""
 
 
 class _LinkParser(HTMLParser):
@@ -78,7 +99,10 @@ def same_host(url: str, base_host: str) -> bool:
 def is_crawlable(url: str) -> bool:
     """Skip obvious static assets so the tree shows pages, not resources."""
     path = urlparse(url).path.lower()
-    return not path.endswith(_ASSET_SUFFIXES)
+    # Following logout links destroys the session before protected pages are visited.
+    return not path.endswith(_ASSET_SUFFIXES) and not re.search(
+        r"/(?:logout|signout|sign-out)(?:\.[a-z]+)?/?$", path
+    )
 
 
 _LOC_RE = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.IGNORECASE)
@@ -117,9 +141,7 @@ def parse_sitemap(xml: str) -> list[str]:
     return [m.strip() for m in _LOC_RE.findall(xml)]
 
 
-async def _discover_seeds(
-    client: httpx.AsyncClient, base: str, host: str
-) -> list[str]:
+async def _discover_seeds(client: httpx.AsyncClient, base: str, host: str) -> list[str]:
     """Collect extra crawl seeds from robots.txt and sitemap.xml.
 
     Best-effort and same-host only — failures are logged and skipped so a
@@ -180,8 +202,9 @@ async def _authenticate(
 ) -> None:
     """Best-effort form login mirroring the detectors' approach: GET the login
     page, resubmit its hidden fields (carries any CSRF token) plus credentials.
-    Failures are swallowed — the crawl continues unauthenticated rather than
-    aborting, since partial discovery is still useful."""
+    Transport errors allow an unauthenticated crawl. Explicit login failures
+    and the DVWA setup redirect are surfaced instead of presenting the login
+    screen as a successful discovery of the protected application."""
     login_url = urljoin(base + "/", cfg["login_path"])
     try:
         page = await client.get(login_url)
@@ -196,7 +219,20 @@ async def _authenticate(
         if cfg.get("login_submit_field"):
             data[cfg["login_submit_field"]] = cfg.get("login_submit_value", "")
         post_url = login_form.action if login_form else login_url
-        await client.post(post_url, data=data)
+        response = await client.post(post_url, data=data)
+        if urlparse(str(response.url)).path.endswith("/setup.php"):
+            raise CrawlError(
+                "DVWA's database is not initialized. Open its setup page and create the "
+                "lab database before discovering paths."
+            )
+        if urlparse(str(response.url)).path == urlparse(login_url).path and any(
+            field.type == "password"
+            for form in parse_forms(response.text, str(response.url))
+            for field in form.fields
+        ):
+            raise CrawlError(
+                "Target login failed. Check the login credentials in Advanced settings."
+            )
         for name, value in cfg.get("post_login_cookies", {}).items():
             client.cookies.set(name, value, domain=host, path="/")
     except httpx.HTTPError as exc:
@@ -211,7 +247,7 @@ async def crawl(base_url: str, cfg: dict[str, Any] | None = None) -> list[dict[s
     parsed = urlparse(base_url)
     host = parsed.hostname or ""
     base = f"{parsed.scheme}://{parsed.netloc}"
-    start, _ = urldefrag(base_url)
+    start = parsed._replace(path=parsed.path or "/", fragment="").geturl()
 
     # Apply per-host lab presets (the same source the detectors use) so the
     # DVWA quick-start authenticates with zero config — it needs the login
@@ -226,12 +262,16 @@ async def crawl(base_url: str, cfg: dict[str, Any] | None = None) -> list[dict[s
     entries: dict[str, dict[str, Any]] = {}
     seen: set[str] = {start}
     queue: deque[tuple[str, int]] = deque([(start, 0)])
+    failures: list[str] = []
 
     async with httpx.AsyncClient(
         follow_redirects=True,
         timeout=timeout,
         cookies=cfg.get("cookies", {}),
         headers=cfg.get("headers", {}),
+        # Only the bundled TLS fixture has an intentionally self-signed certificate.
+        # Certificate weaknesses are assessed separately by the TLS detector.
+        verify=host not in {"tls-test", "vulnvista_tls_test"},
     ) as client:
         if cfg.get("login_path") and cfg.get("username") and cfg.get("password"):
             await _authenticate(client, base, host, cfg)
@@ -249,21 +289,32 @@ async def crawl(base_url: str, cfg: dict[str, Any] | None = None) -> list[dict[s
                 resp = await client.get(url)
             except httpx.HTTPError as exc:
                 logger.debug("crawl skip %s: %s", url, exc)
+                failures.append(type(exc).__name__)
                 continue
             if resp.status_code >= 400:
+                failures.append(f"HTTP {resp.status_code}")
                 continue
 
             final_url, _ = urldefrag(str(resp.url))
             if not same_host(final_url, host):
+                failures.append("redirect outside target host")
                 continue
 
             html = resp.text if "html" in resp.headers.get("content-type", "").lower() else ""
             entries[final_url] = _entry(final_url, html, depth)
 
             if html and depth < max_depth:
-                for link in extract_links(html, final_url):
+                form_actions = [form.action for form in parse_forms(html, final_url)]
+                for link in [*extract_links(html, final_url), *form_actions]:
                     if link not in seen and same_host(link, host) and is_crawlable(link):
                         seen.add(link)
                         queue.append((link, depth + 1))
 
+    if not entries:
+        reason = ", ".join(dict.fromkeys(failures)) or "no reachable pages"
+        raise CrawlError(
+            f"Could not discover pages on {base} ({reason}). Check the target URL, port, "
+            "and connectivity from the backend. Bundled lab containers must share "
+            "the vulnvista_net network. For protected pages, check login settings."
+        )
     return sorted(entries.values(), key=lambda e: (e["path"], e["url"]))

@@ -319,6 +319,7 @@ export default function Scans() {
   const { targets: registeredTargets, refresh, replaceFinding } = useAppData();
   const [scans, setScans] = useState<Scan[]>([]);
   const [profile, setProfile] = useState<ProfileId>("command_injection");
+  const hostScoped = profile === "weak_tls" || profile === "vulnerable_services";
   const [reportFormat, setReportFormat] = useState<ReportFormat>("csv");
   const [url, setUrl] = useState(PROFILES.command_injection.defaultUrl);
   const [name, setName] = useState("");
@@ -630,6 +631,12 @@ export default function Scans() {
       }
 
       const paths = current.paths ?? [];
+      if (paths.length === 0) {
+        finish(p3, "error", "No reachable paths discovered");
+        setDiscovery(null);
+        setInScope(new Set());
+        throw new Error("No reachable web paths were found. Check the target URL, port, backend connectivity, and login settings, then retry discovery.");
+      }
       finish(p3, "done", `Discovered ${paths.length} path(s)`);
       setDiscovery(current);
       // Everything in scope by default; the operator narrows from there.
@@ -673,7 +680,7 @@ export default function Scans() {
     // otherwise with just the chosen detector. Without a discovery we fall back to
     // the classic single-target scan that lets each detector self-discover.
     const allDiscovered = (discovery?.paths ?? []).map((entry) => entry.path);
-    const scopeMode = Boolean(discovery && discoveredTarget && allDiscovered.length > 0);
+    const scopeMode = !hostScoped && Boolean(discovery && discoveredTarget && allDiscovered.length > 0);
     const inScopePaths = allDiscovered.filter((path) => inScope.has(path));
     const outOfScopePaths = allDiscovered.filter((path) => !inScope.has(path));
     try {
@@ -749,7 +756,7 @@ export default function Scans() {
     selectedRegisteredTarget?.is_allowed || isTrustedHost(url) || authorizationScope === url.trim(),
   );
   const discoveredPaths = discovery?.paths ?? [];
-  const scopeMode = discoveredPaths.length > 0;
+  const scopeMode = !hostScoped && discoveredPaths.length > 0;
   const scanButtonLabel = busy
     ? "Scan in progress…"
     : scopeMode
@@ -973,7 +980,14 @@ export default function Scans() {
                 </fieldset>
               </details>
 
-              <div className="border-t border-[#d0ccc7] pt-4">
+              {hostScoped ? <div className="border-t border-[#d0ccc7] pt-4" role="status">
+                <p className="text-[9px] font-black uppercase tracking-[0.08em]">Host-level scan</p>
+                <p className="mt-1 text-[10px] leading-relaxed text-[#676360]">
+                  {profile === "weak_tls"
+                    ? "TLS checks the target host and TLS port, not website paths. No path discovery is needed. Start the TLS scan to inspect protocols, ciphers, and certificates."
+                    : "Service detection discovers network ports and service versions during the scan. No website path selection is needed."}
+                </p>
+              </div> : <div className="border-t border-[#d0ccc7] pt-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-[9px] font-black uppercase tracking-[0.08em]">
@@ -1007,7 +1021,7 @@ export default function Scans() {
                     </p>
                   </div>
                 )}
-              </div>
+              </div>}
 
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#d0ccc7] pt-4">
                 <p className="text-[9px] font-bold uppercase tracking-wide text-[#676360]">
@@ -1017,7 +1031,7 @@ export default function Scans() {
                 </p>
                 <button
                   type="submit"
-                  disabled={busy || !canScanTarget || (scopeMode && inScope.size === 0)}
+                  disabled={busy || discovering || !canScanTarget || (scopeMode && inScope.size === 0)}
                   className="vv-button-primary min-w-[190px]"
                 >
                   {scanButtonLabel}

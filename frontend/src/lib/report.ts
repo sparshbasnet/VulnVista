@@ -175,14 +175,52 @@ async function buildPdf(findings: Finding[], scope?: ReportScope) {
     cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
   }
 
+  // Evidence text is long and free-form — cramming it into the main table as
+  // just another column starves it of width and the rest of the columns get
+  // truncated/squeezed. Drop it from the main table and list it separately
+  // below, where it gets the full page width to wrap into.
+  const tableColumns = COLUMNS.filter((col) => col !== "evidence_summary");
+
   autoTable(doc, {
     startY: cursorY,
-    head: [COLUMNS.map((col) => COLUMN_LABELS[col] ?? col)],
-    body: findings.map((f) => COLUMNS.map((col) => (f[col] === null || f[col] === undefined ? "" : String(f[col])))),
-    styles: { fontSize: 7, cellWidth: "wrap" },
+    head: [tableColumns.map((col) => COLUMN_LABELS[col] ?? col)],
+    body: findings.map((f) =>
+      tableColumns.map((col) => (f[col] === null || f[col] === undefined ? "" : String(f[col]))),
+    ),
+    styles: { fontSize: 7, overflow: "linebreak" },
     headStyles: { fillColor: [239, 237, 234], textColor: [23, 22, 22] },
     margin: { left: 14, right: 14 },
   });
+  cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
+
+  if (findings.length) {
+    if (cursorY > doc.internal.pageSize.getHeight() - 30) {
+      doc.addPage();
+      cursorY = 16;
+    }
+    doc.setFontSize(12);
+    doc.setTextColor(23, 22, 22);
+    doc.text("Evidence", 14, cursorY);
+    cursorY += 6;
+
+    autoTable(doc, {
+      startY: cursorY,
+      head: [["Vulnerability", "Endpoint", "Evidence"]],
+      body: findings.map((f) => [
+        String(f.vulnerability_name ?? ""),
+        String(f.affected_endpoint ?? ""),
+        String(f.evidence_summary ?? ""),
+      ]),
+      styles: { fontSize: 8, cellWidth: "wrap", overflow: "linebreak" },
+      columnStyles: {
+        0: { cellWidth: 60 },
+        1: { cellWidth: 70 },
+        2: { cellWidth: "auto" },
+      },
+      headStyles: { fillColor: [239, 237, 234], textColor: [23, 22, 22] },
+      margin: { left: 14, right: 14 },
+    });
+  }
 
   return doc;
 }

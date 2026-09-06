@@ -6,21 +6,18 @@
 # "Remote OS Command Injection" scan rule (plugin id 90020) against DVWA's exec
 # exercise, and prints the resulting alerts.
 #
-# Networking note: ZAP is published on the host as :8090 but listens on :8080
-# inside the container, so a *direct* http://localhost:8090/JSON/... call is
-# mis-read by ZAP as a proxy request. We therefore reach BOTH the ZAP API and
-# the DVWA target *through* ZAP's proxy (-x $PROXY): the API via ZAP's own
-# hostname (http://zap:8080), the target via its vulnvista_net name (http://dvwa).
+# ZAP has no published host port. Run this helper inside its container so the
+# API and DVWA are reachable through their vulnvista_net service names.
 #
 # Prereqs (from repo root):
 #   docker network create vulnvista_net 2>/dev/null || true
 #   docker compose --env-file .env -f lab/docker-compose.yml   up -d dvwa
 #   docker compose --env-file .env -f tools/docker-compose.yml up -d zap
 #
-# Usage:  ./tools/zap-command-injection.sh
+# Usage (Bash): docker exec -i vulnvista_zap bash -s < tools/zap-command-injection.sh
 set -euo pipefail
 
-PROXY="${ZAP_PROXY:-http://localhost:8090}"   # ZAP proxy/API published port
+PROXY="${ZAP_PROXY:-http://zap:8080}"         # Internal Docker network only
 ZAPI="${ZAP_API_BASE:-http://zap:8080}"       # ZAP's own address, as seen via the proxy
 KEY="${ZAP_API_KEY:-vulnvista-dev-key}"
 TARGET="${TARGET:-http://dvwa}"               # DVWA via vulnvista_net DNS (port 80)

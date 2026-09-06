@@ -2,6 +2,7 @@ import httpx
 import pytest
 
 from app.services.crawler import (
+    CrawlError,
     _entry,
     crawl,
     extract_links,
@@ -135,8 +136,8 @@ def test_parse_robots_extracts_paths_and_sitemaps() -> None:
         "User-agent: *\n"
         "Disallow: /admin/\n"
         "Allow: /public\n"
-        "Disallow: /tmp/*.log\n"   # wildcard trimmed to concrete prefix
-        "Disallow:\n"              # empty value ignored
+        "Disallow: /tmp/*.log\n"  # wildcard trimmed to concrete prefix
+        "Disallow:\n"  # empty value ignored
         "Sitemap: http://app/sitemap.xml\n"
     )
     paths, sitemaps = parse_robots(text, "http://app")
@@ -193,3 +194,79 @@ async def test_crawl_honors_max_pages(monkeypatch: pytest.MonkeyPatch) -> None:
     _mock_client(monkeypatch, handler)
     results = await crawl("http://dvwa", {"max_pages": 5, "max_depth": 10})
     assert len(results) <= 5
+
+
+async def test_unreachable_target_is_an_error_not_empty_success(monkeypatch) -> None:
+    def handler(request):
+        raise httpx.ConnectError("unreachable", request=request)
+
+    _mock_client(monkeypatch, handler)
+    with pytest.raises(CrawlError, match="ConnectError"):
+        await crawl("http://unreachable")
+
+
+async def test_http_failure_is_reported(monkeypatch) -> None:
+    _mock_client(monkeypatch, lambda request: httpx.Response(503))
+    with pytest.raises(CrawlError, match="HTTP 503"):
+        await crawl("http://app")
+
+
+async def test_crawler_follows_form_actions_but_never_logs_out(monkeypatch) -> None:
+    visited = []
+
+    def handler(request):
+        visited.append(request.url.path)
+        if request.url.path == "/":
+            return httpx.Response(
+                200,
+                text=(
+                    '<a href="/logout.php">Logout</a>'
+                    '<form action="/search" method="POST"><input name="q"></form>'
+                ),
+                headers={"content-type": "text/html"},
+            )
+        return httpx.Response(200 if request.url.path == "/search" else 404)
+
+    _mock_client(monkeypatch, handler)
+    results = await crawl("http://app")
+    assert {entry["path"] for entry in results} == {"/", "/search"}
+    assert "/logout.php" not in visited
+
+
+async def test_dvwa_setup_redirect_is_actionable(monkeypatch) -> None:
+    def handler(request):
+        if request.url.path == "/setup.php":
+            return httpx.Response(200)
+        if request.method == "POST":
+            return httpx.Response(302, headers={"Location": "/setup.php"})
+        return httpx.Response(200, text='<form method="POST"></form>')
+
+    _mock_client(monkeypatch, handler)
+    with pytest.raises(CrawlError, match="database is not initialized"):
+        await crawl("http://dvwa")
+
+
+async def test_failed_login_is_not_a_successful_login_page_discovery(monkeypatch) -> None:
+    _mock_client(
+        monkeypatch,
+        lambda request: httpx.Response(
+            200, text='<form method="POST"><input type="password" name="password"></form>'
+        ),
+    )
+    with pytest.raises(CrawlError, match="login failed"):
+        await crawl("http://dvwa")
+
+
+@pytest.mark.parametrize("host,verify", [("tls-test", False), ("example.test", True)])
+async def test_self_signed_exception_is_limited_to_tls_fixture(monkeypatch, host, verify) -> None:
+    real_init = httpx.AsyncClient.__init__
+    seen = []
+
+    def patched_init(self, *args, **kwargs):
+        seen.append(kwargs.get("verify", True))
+        kwargs["transport"] = httpx.MockTransport(lambda request: httpx.Response(200))
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
+    assert (await crawl(f"https://{host}"))[0]["path"] == "/"
+    assert seen == [verify]

@@ -111,6 +111,7 @@ export const api = {
       method: "POST",
     }),
   listTargets: () => request<Target[]>("/targets"),
+  deleteTarget: (id: string) => request<void>(`/targets/${id}`, { method: "DELETE" }),
   createTarget: (payload: TargetCreatePayload) =>
     request<Target>("/targets", {
       method: "POST",
