@@ -2,7 +2,7 @@ import { Link, NavLink, Outlet } from "react-router-dom";
 import { useHealth } from "../hooks/useHealth";
 import { useAuth } from "../auth/useAuth";
 import { useAppData } from "../hooks/useAppData";
-import { downloadFindingsReport } from "../lib/report";
+import ReportMenu from "./ReportMenu";
 
 const navBase =
   "group flex min-h-10 items-center justify-between gap-3 px-3 text-[11px] font-extrabold uppercase tracking-[0.08em] transition-colors";
@@ -79,14 +79,13 @@ export default function Layout() {
         </nav>
 
         <div className="border-t border-[#8f8b87] p-4">
-          <button
-            type="button"
-            onClick={() => downloadFindingsReport(findings)}
+          <ReportMenu
+            findings={findings}
             disabled={findings.length === 0}
-            className="vv-button-primary w-full"
-          >
-            Generate report
-          </button>
+            buttonClassName="vv-button-primary w-full"
+            label="Generate report"
+            menuPlacement="up"
+          />
           <p className="mt-3 text-[10px] leading-relaxed text-[#676360]">
             Lab scope only · authorization enforced per target
           </p>
@@ -116,14 +115,13 @@ export default function Layout() {
                 <span className={`h-2 w-2 ${apiTone}`} aria-hidden="true" />
                 {health}
               </span>
-              <button
-                type="button"
-                onClick={() => downloadFindingsReport(findings)}
+              <ReportMenu
+                findings={findings}
                 disabled={findings.length === 0}
-                className="vv-button-primary min-h-8 px-2.5 text-[10px]"
-              >
-                Report
-              </button>
+                buttonClassName="vv-button-primary min-h-8 px-2.5 text-[10px]"
+                label="Report"
+                menuAlign="right"
+              />
             </div>
           </div>
           <nav className="vv-scrollbar flex max-w-full overflow-x-auto border-t border-[#d8d4cf] px-2" aria-label="Primary navigation">

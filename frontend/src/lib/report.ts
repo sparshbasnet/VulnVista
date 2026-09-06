@@ -1,6 +1,6 @@
 import type { Finding } from "../types";
 
-export type ReportFormat = "csv" | "doc";
+export type ReportFormat = "csv" | "doc" | "xls" | "pdf";
 
 const COLUMNS: (keyof Finding)[] = [
   "vulnerability_name",
@@ -73,9 +73,10 @@ function buildCsv(findings: Finding[], scope?: ReportScope): string {
   return rows.join("\n");
 }
 
-/** Build a Word-openable document (HTML with an .doc extension). Word and
- * Google Docs both render this as a formatted report with real tables. */
-function buildDoc(findings: Finding[], scope?: ReportScope): string {
+/** Build a Word- or Excel-openable document (HTML with a .doc/.xls extension).
+ * Word, Excel, and Google Docs/Sheets all render this as a formatted report
+ * with real tables — no binary file format library required. */
+function buildHtmlTable(findings: Finding[], scope: ReportScope | undefined, kind: "word" | "excel"): string {
   const generated = new Date().toLocaleString();
 
   const findingRows = findings
@@ -105,8 +106,13 @@ function buildDoc(findings: Finding[], scope?: ReportScope): string {
        </table>`
     : "";
 
+  const xmlns =
+    kind === "word"
+      ? `xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"`
+      : `xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"`;
+
   return `<!DOCTYPE html>
-<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<html ${xmlns} xmlns="http://www.w3.org/TR/REC-html40">
 <head>
   <meta charset="utf-8">
   <title>VulnVista Findings Report</title>
@@ -130,21 +136,89 @@ function buildDoc(findings: Finding[], scope?: ReportScope): string {
 </html>`;
 }
 
-export function downloadFindingsReport(
+/** Build a real PDF file (jsPDF + autotable) with one table per section.
+ * Both libraries are dynamically imported so their ~250 kB (gzipped) weight
+ * only loads when someone actually picks the PDF format. */
+async function buildPdf(findings: Finding[], scope?: ReportScope) {
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import("jspdf"),
+    import("jspdf-autotable"),
+  ]);
+
+  const doc = new jsPDF({ orientation: "landscape" });
+  const generated = new Date().toLocaleString();
+
+  doc.setFontSize(16);
+  doc.text("VulnVista Findings Report", 14, 16);
+  doc.setFontSize(9);
+  doc.setTextColor(103, 99, 96);
+  doc.text(
+    `Generated ${generated} · ${findings.length} finding${findings.length === 1 ? "" : "s"}`,
+    14,
+    22,
+  );
+
+  let cursorY = 28;
+
+  if (scope) {
+    autoTable(doc, {
+      startY: cursorY,
+      head: [["Scope", "Path"]],
+      body: [
+        ...scope.inScope.map((p) => ["In scope", p]),
+        ...scope.outOfScope.map((p) => ["Out of scope", p]),
+      ],
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [239, 237, 234], textColor: [23, 22, 22] },
+      margin: { left: 14, right: 14 },
+    });
+    cursorY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+  }
+
+  autoTable(doc, {
+    startY: cursorY,
+    head: [COLUMNS.map((col) => COLUMN_LABELS[col] ?? col)],
+    body: findings.map((f) => COLUMNS.map((col) => (f[col] === null || f[col] === undefined ? "" : String(f[col])))),
+    styles: { fontSize: 7, cellWidth: "wrap" },
+    headStyles: { fillColor: [239, 237, 234], textColor: [23, 22, 22] },
+    margin: { left: 14, right: 14 },
+  });
+
+  return doc;
+}
+
+export async function downloadFindingsReport(
   findings: Finding[],
   format: ReportFormat = "csv",
   scope?: ReportScope,
 ) {
   const stamp = new Date().toISOString().slice(0, 10);
-  const isDoc = format === "doc";
-  const content = isDoc ? buildDoc(findings, scope) : buildCsv(findings, scope);
-  const blob = new Blob([content], {
-    type: isDoc ? "application/msword;charset=utf-8" : "text/csv;charset=utf-8",
-  });
+  const filename = `vulnvista-findings-${stamp}.${format}`;
+
+  if (format === "pdf") {
+    const doc = await buildPdf(findings, scope);
+    doc.save(filename);
+    return;
+  }
+
+  const content =
+    format === "doc"
+      ? buildHtmlTable(findings, scope, "word")
+      : format === "xls"
+        ? buildHtmlTable(findings, scope, "excel")
+        : buildCsv(findings, scope);
+  const mimeType =
+    format === "doc"
+      ? "application/msword;charset=utf-8"
+      : format === "xls"
+        ? "application/vnd.ms-excel;charset=utf-8"
+        : "text/csv;charset=utf-8";
+
+  const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `vulnvista-findings-${stamp}.${isDoc ? "doc" : "csv"}`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
 }
