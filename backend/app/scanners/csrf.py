@@ -158,6 +158,13 @@ class CSRFDetector(BaseDetector):
 
     async def check(self, context: ScanContext) -> DetectorResult:
         parsed = urlparse(context.base_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return self._error_result(
+                context,
+                GENERIC_DEFAULTS,
+                "Target must be an absolute HTTP(S) URL.",
+            )
+
         host = parsed.hostname or ""
         base = f"{parsed.scheme}://{parsed.netloc}"
         cfg = {**GENERIC_DEFAULTS, **LAB_PRESETS.get(host, {}), **context.extra}

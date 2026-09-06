@@ -91,6 +91,17 @@ def _mock_client(monkeypatch: pytest.MonkeyPatch, handler) -> None:
     monkeypatch.setattr(httpx.AsyncClient, "__init__", patched_init)
 
 
+@pytest.mark.parametrize("base_url", ["example.test/profile", "ftp://example.test/profile"])
+async def test_check_rejects_non_http_absolute_targets(base_url: str) -> None:
+    result = await CSRFDetector().check(
+        ScanContext(target_id="t1", base_url=base_url, extra={})
+    )
+
+    assert result.validation_status == "ERROR"
+    assert result.detected is False
+    assert "absolute HTTP(S) URL" in result.evidence_summary
+
+
 NO_TOKEN_GET_FORM_HTML = """
 <html><body>
 <form action="/profile" method="GET">
