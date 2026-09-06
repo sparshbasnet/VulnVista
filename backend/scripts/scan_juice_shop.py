@@ -9,7 +9,6 @@ running 50+ rule types against every discovered URL/parameter.
 
 Run with: docker compose exec backend python3 scripts/scan_juice_shop.py
 """
-
 import json
 import time
 import urllib.error
@@ -101,5 +100,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-# for the zap to start scarpping and scanning the juiceshop.
-# docker compose exec backend python3 scripts/scan_juice_shop.py
+#for the zap to start scarpping and scanning the juiceshop.
+#docker compose exec backend python3 scripts/scan_juice_shop.py 

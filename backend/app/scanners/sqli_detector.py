@@ -130,24 +130,3 @@ async def _main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(_main())
-
-# import asyncio
-# import json
-# import os
-# async def _main() -> None:
-#     """Run a manual XSS scan against Juice Shop."""
-#     target_url = os.getenv("XSS_TARGET_URL", "http://juice-shop:3000")
-
-#     result = await XSSDetector().check(
-#         ScanContext(
-#             target_id="manual-xss",
-#             base_url=target_url,
-#             timeout_seconds=300,
-#         )
-#     )
-
-#     print(json.dumps(result.__dict__, indent=2, default=str))
-
-
-# if __name__ == "__main__":
-#     asyncio.run(_main())

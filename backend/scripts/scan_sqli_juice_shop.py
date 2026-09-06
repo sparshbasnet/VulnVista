@@ -9,7 +9,6 @@ then run the scoped active scan against it.
 
 Run with: docker compose exec backend python3 scripts/scan_sqli_juice_shop.py
 """
-
 import json
 import time
 import urllib.error
@@ -80,13 +79,10 @@ def seed_login_request():
         f"{body}"
     )
     print("Seeding login request into ZAP's history...")
-    zap_call(
-        "/JSON/core/action/sendRequest/",
-        {
-            "request": raw_request,
-            "followRedirects": "true",
-        },
-    )
+    zap_call("/JSON/core/action/sendRequest/", {
+        "request": raw_request,
+        "followRedirects": "true",
+    })
     print("Login request seeded.\n")
 
 
@@ -110,16 +106,13 @@ def main():
     print("Scan policy scoped to SQLi rules.\n")
 
     print(f"Running SQLi-only active scan on {LOGIN_URL}...")
-    ascan_result = zap_call(
-        "/JSON/ascan/action/scan/",
-        {
-            "url": LOGIN_URL,
-            "recurse": "false",
-            "inScopeOnly": "false",
-            "method": "POST",
-            "postData": '{"email":"test@test.com","password":"test123"}',
-        },
-    )
+    ascan_result = zap_call("/JSON/ascan/action/scan/", {
+        "url": LOGIN_URL,
+        "recurse": "false",
+        "inScopeOnly": "false",
+        "method": "POST",
+        "postData": '{"email":"test@test.com","password":"test123"}',
+    })
     wait_for("/JSON/ascan/view/status/", ascan_result["scan"], "SQLi scan")
     print("Active scan complete.\n")
 
