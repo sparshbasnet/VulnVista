@@ -29,5 +29,16 @@ LAB_PRESETS: dict[str, dict[str, Any]] = register_aliases(
             "enumeration_param": "email",
             "enumeration_response_key": "question",
         },
+        # DVWA's login form lives at /login.php, which isn't in
+        # COMMON_LOGIN_PATHS, so auto-discovery needs an explicit login_path.
+        # No dedicated enumeration oracle endpoint exists, so this falls back
+        # to the generic login_differential method: submit "admin" (one of
+        # DVWA's hardcoded seed users, same one dvwa_login() authenticates
+        # with) against the login form with a bogus password, and compare the
+        # response to an unknown username.
+        "dvwa": {
+            "login_path": "/login.php",
+            "known_username": "admin",
+        },
     }
 )

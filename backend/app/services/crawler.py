@@ -23,6 +23,7 @@ from urllib.parse import urldefrag, urljoin, urlparse
 import httpx
 
 from app.scanners.command_injection import LAB_PRESETS, parse_forms
+from app.scanners.presets.discovery import LAB_PRESETS as DISCOVERY_LAB_PRESETS
 
 logger = logging.getLogger(__name__)
 
@@ -251,9 +252,10 @@ async def crawl(base_url: str, cfg: dict[str, Any] | None = None) -> list[dict[s
 
     # Apply per-host lab presets (the same source the detectors use) so the
     # DVWA quick-start authenticates with zero config — it needs the login
-    # form's submit button (Login=Login), which the UI can't supply. Caller
-    # cfg wins over presets.
-    cfg = {**LAB_PRESETS.get(host, {}), **(cfg or {})}
+    # form's submit button (Login=Login), which the UI can't supply. Layered
+    # under the discovery-specific presets (extra_seeds for SPA targets like
+    # Juice Shop that link-following can't reach) — caller cfg wins over both.
+    cfg = {**LAB_PRESETS.get(host, {}), **DISCOVERY_LAB_PRESETS.get(host, {}), **(cfg or {})}
 
     max_pages = int(cfg.get("max_pages", DEFAULT_MAX_PAGES))
     max_depth = int(cfg.get("max_depth", DEFAULT_MAX_DEPTH))
@@ -277,8 +279,16 @@ async def crawl(base_url: str, cfg: dict[str, Any] | None = None) -> list[dict[s
             await _authenticate(client, base, host, cfg)
 
         # Seed the queue from robots.txt / sitemap.xml before link-following, so
-        # unlinked-but-declared paths are crawled too.
-        for seed in await _discover_seeds(client, base, host):
+        # unlinked-but-declared paths are crawled too. extra_seeds (lab presets
+        # for SPA targets like Juice Shop) are tracked separately: they're known
+        # real endpoints even when a plain GET probe 4xx/5xxes — e.g. a
+        # POST-only login route — so they stay visible in the scope tree
+        # instead of being silently dropped as crawl failures below.
+        known_seeds = {
+            urljoin(base + "/", path.lstrip("/")) for path in cfg.get("extra_seeds", [])
+        }
+        discovered_seeds = [*known_seeds, *(await _discover_seeds(client, base, host))]
+        for seed in discovered_seeds:
             if seed not in seen and same_host(seed, host) and is_crawlable(seed):
                 seen.add(seed)
                 queue.append((seed, 0))
@@ -289,10 +299,16 @@ async def crawl(base_url: str, cfg: dict[str, Any] | None = None) -> list[dict[s
                 resp = await client.get(url)
             except httpx.HTTPError as exc:
                 logger.debug("crawl skip %s: %s", url, exc)
-                failures.append(type(exc).__name__)
+                if url in known_seeds:
+                    entries[url] = _entry(url, "", depth)
+                else:
+                    failures.append(type(exc).__name__)
                 continue
             if resp.status_code >= 400:
-                failures.append(f"HTTP {resp.status_code}")
+                if url in known_seeds:
+                    entries[url] = _entry(url, "", depth)
+                else:
+                    failures.append(f"HTTP {resp.status_code}")
                 continue
 
             final_url, _ = urldefrag(str(resp.url))
