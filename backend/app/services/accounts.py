@@ -99,7 +99,6 @@ async def invalidate_reset_tokens(db: AsyncSession, user_id: uuid.UUID) -> None:
         .values(used_at=datetime.now(UTC))
     )
 
-
 async def set_password(
     db: AsyncSession,
     user: User,
@@ -180,4 +179,3 @@ def deliver_reset_token(user: User, raw_token: str, expires_at: datetime) -> Non
         expires_at.isoformat(),
         raw_token,
     )
-

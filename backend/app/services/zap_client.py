@@ -51,6 +51,20 @@ class ZAPClient:
             time.sleep(2)
         return scan_id
 
+    def access_url(self, target_url: str) -> None:
+        """Register a target in ZAP's sites tree for passive analysis."""
+        self.zap.core.access_url(target_url, followredirects=True)
+
+    def passive_scan(self, target_url: str, timeout: int = 60) -> list[dict]:
+        """Visit a URL through ZAP and wait for passive scanning to finish."""
+        self.access_url(target_url)
+        start = time.monotonic()
+        while int(self.zap.pscan.records_to_scan) > 0:
+            if time.monotonic() - start > timeout:
+                raise TimeoutError("ZAP passive scan timed out")
+            time.sleep(0.5)
+        return self.get_alerts(target_url)
+
     def get_alerts(self, base_url: str, risk: str | None = None) -> list[dict]:
         """
         Retrieves ZAP alerts for a target, optionally filtered by risk level.
