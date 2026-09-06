@@ -63,13 +63,14 @@ The dashboard never talks to laboratory targets directly — all detection activ
 
 ## 4. Layered Architecture
 
-VulnVista is organised into five logical layers, each with a single responsibility:
+VulnVista is organised into six logical layers, each with a single responsibility:
 
-1. **Presentation layer** — React/TypeScript dashboard. Renders targets, scans, findings, evidence, and reports; issues no direct network calls to lab targets.
-2. **API layer** — FastAPI routers under `/api/*`. Validates input, enforces authorisation and allowlisting, and exposes CRUD/query operations over targets, scans, detectors, findings, evidence, and reports.
-3. **Orchestration layer** — Scan Orchestrator + Detector Registry. Resolves which detectors to run for a scan profile, manages concurrency, timeouts, and per-detector exception isolation.
-4. **Detection layer** — 15 independent detector modules implementing a common `BaseDetector` interface (`check`, `validate`, `build_finding`). Each detector only interacts with the approved lab target it was invoked against.
-5. **Persistence layer** — SQLAlchemy models mapped to PostgreSQL tables for targets, scans, detectors (metadata), findings, and evidence.
+1. **Access-control layer** — JWT-based authentication and role-based authorisation (`ADMIN`, `ANALYST`/operator, `VIEWER`) guarding every non-public route. Covers login, forced password change on first login, self-service password-reset tokens, and admin-managed user accounts. This secures the VulnVista platform itself, distinct from any detector that tests a *target's* authentication.
+2. **Presentation layer** — React/TypeScript dashboard. Renders targets, scans, findings, evidence, and reports; issues no direct network calls to lab targets.
+3. **API layer** — FastAPI routers under `/api/*`. Validates input, enforces authorisation and allowlisting, and exposes CRUD/query operations over targets, discoveries, scans, detectors, findings, and evidence.
+4. **Orchestration layer** — Scan Orchestrator + Detector Registry + Discovery Runner. Resolves which detectors to run for a scan profile, manages concurrency, timeouts, and per-detector exception isolation; the Discovery Runner crawls an approved target to propose in-scope/out-of-scope paths before a scan runs.
+5. **Detection layer** — 15 independent detector modules implementing a common `BaseDetector` interface (`check`, `validate`, `build_finding`). Each detector only interacts with the approved lab target it was invoked against.
+6. **Persistence layer** — SQLAlchemy models mapped to PostgreSQL (Neon-hosted) tables for users, targets, discoveries, scans, findings, and evidence.
 
 Each layer only depends on the layer directly below it; the detection layer has no awareness of the API or presentation layers, which keeps detectors independently testable.
 
@@ -79,13 +80,14 @@ Each layer only depends on the layer directly below it; the detection layer has 
 
 ### 5.1 FastAPI Backend
 
-- **`app/api/`** — route handlers for `/targets`, `/scans`, `/detectors`, `/findings`, `/evidence`, `/reports`, `/dashboard`.
+- **`app/api/`** — route handlers for `/auth`, `/targets`, `/discoveries`, `/scans`, `/findings`. There is no backend `/reports` route — report export is generated client-side (see 5.4).
+- **`app/api/auth_deps.py`** — FastAPI dependencies (`require_operator`, etc.) that verify the JWT and enforce role checks on every protected route.
 - **`app/core/`** — configuration, allowlist enforcement, logging, safety controls (rate limits, timeouts).
-- **`app/database/`** — SQLAlchemy engine/session setup, migrations.
-- **`app/models/`** — ORM models (Target, Scan, Finding, Evidence).
+- **`app/database/`** — SQLAlchemy engine/session setup, migrations (Alembic, applied on startup against Neon).
+- **`app/models/`** — ORM models (User, Target, Discovery, Scan, Finding, Evidence).
 - **`app/schemas/`** — Pydantic request/response schemas.
-- **`app/services/`** — scan orchestration, detector registry, report generation.
-- **`app/scanners/`** — the 15 detector modules plus `base.py` defining the shared interface.
+- **`app/services/`** — scan orchestration, detector registry, discovery runner (crawls a target to propose in-scope/out-of-scope paths).
+- **`app/scanners/`** — the 15 detector modules plus `base.py` defining the shared interface. One detector (`command_injection.py`) also supports an opt-in OWASP ZAP active-scan cross-check (`ScanContext.extra['use_zap']`) that corroborates the manual finding without changing its own probe logic.
 
 ### 5.2 Detector Engine
 
@@ -105,12 +107,16 @@ class BaseDetector:
 
 The **Scan Orchestrator** resolves the list of detectors for a chosen scan profile, invokes each detector inside an isolated exception boundary, applies a per-detector timeout, and forwards successful results to the persistence layer as `Finding` + `Evidence` records. A single detector failure is recorded as an error and does not abort the remaining detectors.
 
-### 5.3 Database (PostgreSQL)
+### 5.3 Database (PostgreSQL via Neon)
+
+The primary datastore is a managed **Neon** Postgres instance (pooled `postgresql+asyncpg://` connection string), not a locally-run container — Alembic migrations run automatically against it on backend startup. A bundled local Postgres container remains available behind a `local-db` Compose profile for fully offline development.
 
 Core tables map directly to the business objects defined in the implementation plan:
 
+- `users` — platform operator accounts (`ADMIN` / `ANALYST` / `VIEWER`), hashed passwords, forced-password-change and password-reset-token state.
 - `targets` — approved lab hosts (`is_allowed` flag enforced at write time).
-- `scans` — one row per scan execution, with lifecycle status (`QUEUED → RUNNING → COMPLETED/PARTIAL/FAILED/CANCELLED`).
+- `discoveries` — one row per crawl of a target, producing the candidate `in_scope_paths` / `out_of_scope_paths` a scan will attack.
+- `scans` — one row per scan execution, with lifecycle status (`QUEUED → RUNNING → COMPLETED/PARTIAL/FAILED/CANCELLED`), and the resolved scope carried over from its discovery.
 - `findings` — one row per confirmed/suspected vulnerability, linked to `scan_id`, `target_id`, `detector_id`.
 - `evidence` — supporting artefacts (HTTP request/response pairs, timing data, screenshots, TLS/cert data, etc.), linked to a finding.
 
@@ -118,10 +124,11 @@ Findings and evidence are intentionally normalised into separate tables so that 
 
 ### 5.4 React/TypeScript Dashboard
 
-- **`pages/`** — Dashboard home, Targets, New Scan, Scan Detail, Finding Detail, History.
-- **`components/`** — charts (severity/category/target distribution), findings table, evidence viewer.
-- **`services/`** — typed API client wrapping the backend REST endpoints.
+- **`pages/`** — Login, ForgotPassword, ResetPassword, ForcedPasswordChange, Dashboard, Targets, Scans, Findings, Evidence, Account, Users (admin-only).
+- **`components/`** — findings table/cards, evidence viewer, scope tree (discovery path selection), layout/navigation.
+- **`services/` / `auth/`** — typed API client wrapping the backend REST endpoints, plus the auth context/hook and protected-route wrappers that redirect unauthenticated users to `/login`.
 - **`hooks/`** — data-fetching and polling hooks (e.g., scan status polling while `RUNNING`).
+- **`lib/report.ts`** — generates the CSV and Word-openable (`.doc`) findings export **client-side** from the already-loaded findings data; there is no backend report-rendering endpoint.
 - **`types/`** — TypeScript types mirroring the backend Pydantic schemas.
 
 ### 5.5 Laboratory Network
@@ -133,14 +140,20 @@ DVWA, OWASP Juice Shop, Metasploitable 2, and a local TLS test service run as is
 ## 6. Data Model Summary
 
 ```text
-Target 1───* Scan 1───* Finding 1───* Evidence
+User (platform account)
+
+Target 1───* Discovery
+       │
+       └──1───* Scan 1───* Finding 1───* Evidence
                 │
                 └──uses──> Detector (metadata/registry, not a DB-owned FK to findings' source-of-truth)
 ```
 
 | Entity | Key Fields | Notes |
 |---|---|---|
+| User | `id, username, email, hashed_password, role, is_active, must_change_password, last_login_at` | Platform login/access-control account — separate from any lab-target credentials a detector uses. |
 | Target | `id, name, target_type, base_url, ip_address, environment, is_allowed` | `is_allowed` is checked before every scan. |
+| Discovery | `id, target_id, status, in_scope_paths, out_of_scope_paths, initiated_by` | Crawls a target and proposes the path scope a scan will attack; a scan carries this scope forward. |
 | Scan | `id, target_id, scan_profile, status, started_at, completed_at, duration, initiated_by, error_summary` | One row per execution. |
 | Finding | `id, scan_id, target_id, detector_id, vulnerability_name, severity, confidence, validation_status, finding_status, cwe, cve, cvss_score, owasp_category` | `validation_status` and `finding_status` (remediation) are tracked independently. |
 | Evidence | type-specific payload (request/response, timing, screenshot, TLS data, etc.) | Stored separately from findings to keep the findings table lean. |
@@ -160,21 +173,27 @@ Keeping validation status and finding/remediation status as separate fields lets
 ### 7.1 Running a Scan (end-to-end)
 
 ```text
-1. User selects Target + Detectors + Scan Profile in the dashboard
-2. Dashboard → POST /scans  (backend validates target.is_allowed)
-3. Backend creates Scan row (status=QUEUED), returns scan_id
-4. Orchestrator transitions Scan to RUNNING
-5. For each selected detector (isolated, timeout-bound):
+0. User logs in (POST /api/auth/login) and the dashboard attaches the returned
+   JWT to every subsequent request; unauthenticated calls are rejected
+1. User optionally runs a Discovery (POST /discoveries) to crawl the target
+   and picks in-scope/out-of-scope paths from the result in the Scope Tree
+2. User selects Target + Detectors + Scan Profile in the dashboard
+3. Dashboard → POST /scans  (backend validates target.is_allowed)
+4. Backend creates Scan row (status=QUEUED), returns scan_id
+5. Orchestrator transitions Scan to RUNNING
+6. For each selected detector (isolated, timeout-bound):
      a. detector.check(context)      → raw result
      b. detector.validate(result)    → validation_status
      c. detector.build_finding(...)  → common Finding schema
      d. Persist Finding + Evidence
      e. On exception: record error_summary for that detector, continue
-6. Orchestrator sets Scan status = COMPLETED / PARTIAL / FAILED
-7. Dashboard polls GET /scans/{id} and GET /scans/{id}/findings
-8. User opens a Finding → GET /findings/{id} (includes evidence, CWE/CVE/CVSS, remediation)
-9. User updates remediation status → PATCH /findings/{id}/status
-10. User exports a report → POST /reports/{scan_id}
+7. Orchestrator sets Scan status = COMPLETED / PARTIAL / FAILED
+8. Dashboard polls GET /scans/{id} and GET /scans/{id}/findings
+9. User opens a Finding → GET /findings/{id} (includes evidence, CWE/CVE/CVSS, remediation)
+10. User updates remediation status → PATCH /findings/{id}/status
+11. User exports a report → the dashboard generates CSV/Word (.doc) client-side
+    from the findings already loaded (frontend/src/lib/report.ts) — no
+    backend round-trip is involved
 ```
 
 ### 7.2 Detector Result Contract
@@ -219,12 +238,14 @@ Safety is enforced structurally, not just procedurally:
 ```text
 ┌─────────────────────────── docker-compose.yml ───────────────────────────┐
 │                                                                            │
-│  ┌───────────────┐   ┌───────────────┐   ┌───────────────────────────┐  │
-│  │  frontend      │   │  backend       │   │  postgres                 │  │
-│  │  (React build, │──▶│  (FastAPI,     │──▶│  (persistent volume)      │  │
-│  │  served static)│   │  Uvicorn)      │   │                            │  │
-│  └───────────────┘   └───────┬───────┘   └───────────────────────────┘  │
-│                               │                                          │
+│  ┌───────────────┐   ┌───────────────┐                                  │
+│  │  frontend      │   │  backend       │──────────────┐                  │
+│  │  (React build, │──▶│  (FastAPI,     │              │                  │
+│  │  served static)│   │  Uvicorn)      │              ▼                  │
+│  └───────────────┘   └───────┬───────┘   ┌───────────────────────────┐  │
+│                               │           │  Neon (managed Postgres,  │  │
+│                               │           │  pooled connection)       │  │
+│                               │           └───────────────────────────┘  │
 │                               ▼                                          │
 │                  ┌───────────────────────────┐                          │
 │                  │ Private lab network        │                          │
@@ -234,7 +255,9 @@ Safety is enforced structurally, not just procedurally:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-- Each service (frontend, backend, postgres) has its own Dockerfile; laboratory targets live under `lab/` with their own compose definitions on an isolated network segment.
+- The frontend and backend each have their own Dockerfile; laboratory targets live under `lab/` with their own compose definitions on an isolated network segment.
+- Postgres is Neon-hosted by default (`DATABASE_URL` points at Neon's pooled endpoint); a local `postgres` container remains available behind an opt-in `local-db` Compose profile for offline development, with `./storage/postgres` as its persistent volume.
+- Scan evidence/uploads and lab state persist on the host under `./storage/`, bind-mounted into the containers, so they survive `docker compose down` and reboots.
 - Health checks gate service readiness before the orchestrator accepts scan requests.
 - CI/CD (GitHub Actions) runs lint → unit tests → backend tests → frontend build → Docker build → integration checks on every push/PR, and produces a release-candidate build once validated.
 

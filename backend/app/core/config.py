@@ -9,6 +9,21 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
     secret_key: str = "dev-secret-change-me"
+    access_token_expire_minutes: int = 30
+
+    # Login throttling. After `max_failed_logins` consecutive bad passwords the
+    # account refuses further attempts for `lockout_minutes`, and a successful
+    # login clears the counter. Set max_failed_logins to 0 to disable lockout.
+    max_failed_logins: int = 5
+    lockout_minutes: int = 15
+
+    # How long a password-reset token stays usable. Tokens are single-use and
+    # are invalidated as soon as the password actually changes.
+    password_reset_token_ttl_minutes: int = 30
+
+    initial_admin_username: str | None = None
+    initial_admin_email: str | None = None
+    initial_admin_password: str | None = None
 
     database_url: str = "postgresql+asyncpg://vulnvista:vulnvista@postgres:5432/vulnvista"
 

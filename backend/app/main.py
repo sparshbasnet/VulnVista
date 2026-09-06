@@ -6,8 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
-from app.database.session import engine
-from app.models.base import Base
+from app.database.session import AsyncSessionLocal
+from app.services.user_seed import seed_initial_admin
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -15,10 +15,12 @@ configure_logging(settings.log_level)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Dev convenience: create tables if they don't exist yet.
-    # Formal schema changes should go through Alembic migrations (backend/alembic).
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # The schema is owned by Alembic migrations (`alembic upgrade head`), run by
+    # the container entrypoint before the app starts — see backend/entrypoint.sh.
+    # For local runs, apply migrations first. Here we only seed the initial admin
+    # account, which assumes the schema already exists.
+    async with AsyncSessionLocal() as db:
+        await seed_initial_admin(db)
     yield
 
 

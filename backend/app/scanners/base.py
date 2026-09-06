@@ -15,6 +15,31 @@ class ScanContext:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+def scope_cfg_to_path(
+    cfg: dict[str, Any],
+    context: ScanContext,
+    primary_key: str,
+    *alt_keys: str,
+) -> None:
+    """Make a scoped run attack exactly its in-scope path, in place on ``cfg``.
+
+    A scoped scan runs a path-level detector once per in-scope path, passing that
+    path as ``context.extra['discovery_path']``. Without this, a lab preset's
+    fixed endpoint (e.g. DVWA's ``injection_paths``) overrides the scoped path, so
+    every in-scope path re-probes the same preset endpoint(s) and the same
+    finding is reported once per path. Here we point the detector's endpoint at
+    the scoped path and drop the preset's endpoint overrides (``primary_key`` and
+    any ``alt_keys``), so each in-scope path is attacked once. No-op when the run
+    isn't scoped (no ``discovery_path`` in ``extra``).
+    """
+    scoped_path = context.extra.get("discovery_path")
+    if not scoped_path:
+        return
+    for key in alt_keys:
+        cfg.pop(key, None)
+    cfg[primary_key] = scoped_path
+
+
 @dataclass
 class DetectorResult:
     """Common result contract every detector must return (plan section 6)."""
@@ -44,13 +69,30 @@ class BaseDetector(ABC):
     name: str
     vulnerability_type: str
     supported_targets: list[str] = []
+    # How a scoped scan (one with an in-scope path list) should invoke this
+    # detector. "path": run once per in-scope path, with that path passed as
+    # ``discovery_path`` — for detectors that probe a specific page/endpoint.
+    # "host": run once for the whole target regardless of path — for host- or
+    # network-level detectors (TLS, open services, misconfig) where per-path
+    # runs would just duplicate the same finding.
+    scan_scope: str = "path"
 
     @abstractmethod
     async def check(self, context: ScanContext) -> DetectorResult:
         """Execute the detector's safe test(s) against the target."""
 
-    async def validate(self, result: DetectorResult) -> DetectorResult:
-        """Optional secondary validation pass; defaults to a no-op."""
+    async def check_many(self, context: ScanContext) -> list[DetectorResult]:
+        """Execute the detector and return one or more result records.
+
+        Most detectors emit exactly one result and rely on this default
+        wrapper. Detectors that can produce multiple independent findings
+        from one run (e.g. multiple explicit endpoints) should override this.
+        """
+        return [await self.check(context)]
+
+    async def validate(self, context: ScanContext, result: DetectorResult) -> DetectorResult:
+        """Optional secondary validation pass (e.g. cross-checking against an
+        external scanner); defaults to a no-op."""
         return result
 
     def build_finding(self, scan_id: str, target_id: str, result: DetectorResult) -> dict[str, Any]:

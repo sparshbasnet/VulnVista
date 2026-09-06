@@ -1,8 +1,52 @@
 export type ScanStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "PARTIAL" | "FAILED" | "CANCELLED";
 
+export type DiscoveryStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
+
 export type FindingStatus = "OPEN" | "IN_PROGRESS" | "REMEDIATED" | "ACCEPTED_RISK" | "FALSE_POSITIVE";
 
 export type ValidationStatus = "NOT_DETECTED" | "SUSPECTED" | "CONFIRMED" | "INCONCLUSIVE" | "ERROR";
+
+export type UserRole = "ADMIN" | "ANALYST" | "VIEWER";
+
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  role: UserRole;
+  is_active: boolean;
+  last_login_at: string | null;
+  created_at: string;
+  /** On an administrator-issued temporary password; every other route is blocked. */
+  must_change_password: boolean;
+  /** Set while the account is locked out after repeated failed logins. */
+  locked_until: string | null;
+  password_changed_at: string | null;
+}
+
+export interface UserCreatePayload {
+  username: string;
+  email: string;
+  password: string;
+  role: UserRole;
+}
+
+export interface UserUpdatePayload {
+  role?: UserRole;
+  is_active?: boolean;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  must_change_password: boolean;
+}
+
+export interface PasswordResetIssued {
+  user_id: string;
+  username: string;
+  reset_token: string;
+  expires_at: string;
+}
 
 export interface Target {
   id: string;
@@ -37,6 +81,42 @@ export interface Scan {
   duration_seconds: number | null;
   initiated_by: string | null;
   error_summary: string | null;
+  /** Paths attacked when the scan was scoped from a discovery tree; null for legacy scans. */
+  in_scope_paths: string[] | null;
+  /** Discovered paths the operator excluded from the scan; kept for the report. */
+  out_of_scope_paths: string[] | null;
+  created_at: string;
+}
+
+/** One entry from a discovery crawl — the surface area of a single reachable page. */
+export interface DiscoveredPath {
+  url: string;
+  path: string;
+  methods: string[];
+  has_form: boolean;
+  params: string[];
+  depth: number;
+}
+
+/** A crawl of a target that maps its reachable paths for scope selection. */
+export interface Discovery {
+  id: string;
+  target_id: string;
+  status: DiscoveryStatus;
+  started_at: string | null;
+  completed_at: string | null;
+  initiated_by: string | null;
+  error_summary: string | null;
+  page_count: number;
+  paths: DiscoveredPath[] | null;
+  created_at: string;
+}
+
+export interface Evidence {
+  id: string;
+  finding_id: string;
+  evidence_type: string;
+  content: Record<string, unknown>;
   created_at: string;
 }
 
@@ -60,4 +140,6 @@ export interface Finding {
   owasp_category: string | null;
   finding_status: FindingStatus;
   created_at: string;
+  updated_at?: string;
+  evidence: Evidence[];
 }

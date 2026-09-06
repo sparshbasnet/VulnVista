@@ -1,9 +1,346 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink: #171616;
+  --muted: #5b5754;
+  --faint: #676360;
+  --line: #aaa6a1;
+  --line-soft: #d8d4cf;
+  --canvas: #e9e7e4;
+  --paper: #f7f6f4;
+  --paper-strong: #fff;
+  --signal: #d62d18;
+  --signal-dark: #a61b0d;
+  --signal-soft: #ffd8d2;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--ink);
 }
 
 body {
   margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+summary,
+select {
+  cursor: pointer;
+}
+
+button:disabled,
+select:disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: var(--signal);
+  color: white;
+}
+
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+
+.vv-panel {
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.vv-kicker,
+.vv-label {
+  font-size: 0.6875rem;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.vv-kicker {
+  color: var(--signal);
+}
+
+.vv-label {
+  color: var(--muted);
+}
+
+.vv-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.45rem;
+  padding: 0.18rem 0.5rem;
+  border: 1px solid transparent;
+  font-size: 0.56rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.vv-severity-critical {
+  background: #b71f0e;
+  color: #fff;
+}
+.vv-severity-high {
+  background: #d62d18;
+  color: #fff;
+}
+.vv-severity-medium {
+  background: #ffb2a8;
+  color: #76180e;
+}
+.vv-severity-low {
+  background: #d5d1cd;
+  color: #393634;
+}
+.vv-severity-info {
+  background: #e8e5e1;
+  color: #514e4b;
+}
+
+.vv-status-open {
+  color: #b91f10;
+}
+.vv-status-in-progress {
+  color: #a95d00;
+}
+.vv-status-remediated {
+  color: #167249;
+}
+.vv-status-accepted-risk {
+  color: #5d557b;
+}
+.vv-status-false-positive {
+  color: #676360;
+}
+
+.vv-button-primary,
+.vv-button-secondary {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.035em;
+  line-height: 1;
+  text-transform: uppercase;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.vv-button-primary {
+  border-color: var(--signal);
+  background: var(--signal);
+  color: white;
+}
+
+.vv-button-primary:hover:not(:disabled) {
+  border-color: var(--signal-dark);
+  background: var(--signal-dark);
+}
+
+.vv-button-secondary {
+  background: transparent;
+  color: var(--ink);
+}
+
+.vv-button-secondary:hover:not(:disabled) {
+  background: var(--ink);
+  color: white;
+}
+
+.vv-button-primary:disabled,
+.vv-button-secondary:disabled {
+  opacity: 0.38;
+}
+
+.vv-input {
+  min-height: 2.45rem;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: white;
+  padding: 0.58rem 0.7rem;
+  color: var(--ink);
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.vv-input::placeholder {
+  color: var(--faint);
+}
+
+.vv-input:hover {
+  border-color: var(--ink);
+}
+
+.vv-input:focus {
+  border-color: var(--signal);
+  box-shadow: inset 0 -2px 0 var(--signal);
+}
+
+.vv-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.78rem;
+}
+
+.vv-table thead {
+  border-bottom: 1px solid var(--line);
+}
+
+.vv-table th {
+  padding: 0.72rem 0.8rem;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.vv-table td {
+  border-bottom: 1px solid var(--line-soft);
+  padding: 0.78rem 0.8rem;
+  vertical-align: middle;
+}
+
+.vv-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.vv-table tbody tr:hover {
+  background: white;
+}
+
+.vv-scrollbar {
+  scrollbar-color: var(--line) transparent;
+  scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Top rule for a panel that should read as the primary one on the page.
+   Declared here rather than as a border utility, because .vv-panel sets the
+   `border` shorthand and would otherwise reset it. */
+.vv-panel-accent {
+  border-top: 2px solid var(--signal);
+}
+
+/* Form scaffolding — one definition so every form in the app reads the same. */
+.vv-field {
+  display: block;
+}
+
+.vv-field > .vv-label {
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+.vv-hint {
+  display: block;
+  margin-top: 0.4rem;
+  color: var(--faint);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.vv-input:disabled {
+  background: #efedea;
+  color: var(--faint);
+}
+
+select.vv-input {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink) 50%),
+    linear-gradient(135deg, var(--ink) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) calc(50% + 2px),
+    calc(100% - 10px) calc(50% + 2px);
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 2rem;
+}
+
+/* Inline messages. Same geometry as the panels: square corners, hairline rule. */
+.vv-alert {
+  border: 1px solid;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.vv-alert-danger {
+  border-color: #b91f10;
+  background: #fff1ef;
+  color: #8f190e;
+}
+
+.vv-alert-success {
+  border-color: #167249;
+  background: #e5f3eb;
+  color: #0f5836;
+}
+
+.vv-alert-note {
+  border-color: var(--line);
+  background: #efedea;
+  color: var(--muted);
+}
+
+.vv-code {
+  display: block;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  background: var(--paper-strong);
+  padding: 0.6rem 0.7rem;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
 }

@@ -13,14 +13,14 @@ Full per-vulnerability checklists live in the [implementation plan](VulnVista_IM
 
 | Milestone | Target | Outcome | Status |
 | --- | --- | --- | --- |
-| M1 | Week 1 | Scope, architecture, and lab foundation | 🟡 Monorepo, backend/frontend scaffolding, and Docker Compose done; lab targets and safety controls next |
-| V1–V3 + M2 | Week 2 | Core scan framework + SQL injection, command injection, XSS | ⬜ Not started |
-| V4–V7 + M3A | Week 3 | + File upload, path traversal, CSRF, IDOR | ⬜ Not started |
-| V8–V11 + M3 | Week 4 | + JWT/session, weak auth, SSRF, XXE; dashboard MVP | ⬜ Not started |
-| V12–V15 + M4 | Week 5 | + Sensitive files, vulnerable services, misconfiguration, weak TLS — all 15 detectors, feature freeze | ⬜ Not started |
-| M5A | Week 6 | Full integration, reporting, CI/CD | ⬜ Not started |
-| M5 | Week 7 | Validated release candidate | ⬜ Not started |
-| M6 | Week 8 | Final delivery, report, demonstration | ⬜ Not started |
+| M1 | Week 1 | Scope, architecture, and lab foundation | ✅ Complete |
+| V1–V3 + M2 | Week 2 | Core scan framework + SQL injection, command injection, file upload | ✅ Complete |
+| V4–V6 + M2B | Week 3 | + XSS, weak authentication, JWT/session | ✅ Complete |
+| V7–V9 + M3A | Week 4 | + IDOR, sensitive files, path traversal; dashboard MVP | ✅ Complete |
+| V10–V12 + M3 | Week 5 | + SSRF, vulnerable services, CSRF; full dashboard workflows | ✅ Complete |
+| V13–V15 + M4/M5A | Week 6 | + XXE, weak TLS, security misconfiguration; integration, Docker, CI/CD | ✅ Complete |
+| M5 | Week 7 | Detector validation, accuracy checks, release-candidate hardening | 🟡 Current stage |
+| M6 | Week 8 | Final delivery, report, demonstration | ⬜ Pending |
 
 ## What VulnVista does
 
@@ -29,7 +29,7 @@ Full per-vulnerability checklists live in the [implementation plan](VulnVista_IM
 - Stores targets, scans, findings, and evidence in PostgreSQL behind a FastAPI backend.
 - Maps findings to CWE, CVE, CVSS, and OWASP Top 10 categories where applicable.
 - Presents severity, confidence, scan history, and remediation status on a React dashboard.
-- Exports HTML/PDF reports from the same data shown on the dashboard.
+- Exports CSV and Word-openable findings reports from the same data shown on the dashboard.
 - Isolates detector failures so one broken check never aborts a scan.
 
 ## High-level architecture
@@ -58,7 +58,7 @@ flowchart TD
 | --- | --- | --- |
 | DVWA | Adjustable-difficulty vulnerability exercises | [lab/docker-compose.yml](lab/docker-compose.yml) |
 | OWASP Juice Shop | Modern Node.js app covering the OWASP Top 10 | [lab/docker-compose.yml](lab/docker-compose.yml) |
-| Metasploitable2 | Known-vulnerable service catalogue | [lab/docker-compose.yml](lab/docker-compose.yml) (community image; VM alternative in [lab/METASPLOITABLE.md](lab/METASPLOITABLE.md)) |
+| Metasploitable2 | Known-vulnerable service catalogue | [lab/docker-compose.yml](lab/docker-compose.yml) community image with mapped service ports |
 | Local TLS test service | Weak TLS/certificate scenarios | [lab/tls-test/](lab/tls-test/) via [lab/docker-compose.yml](lab/docker-compose.yml) |
 
 All targets run on an isolated `vulnvista_net` Docker network with no route to production infrastructure. See [lab/README.md](lab/README.md) for URLs, default credentials, and safety controls.
@@ -109,9 +109,10 @@ Evidence (HTTP request/response pairs, screenshots, TLS results, service banners
 
 - Severity, category, and target distribution.
 - Findings table with filtering by target, severity, confidence, and validation status.
-- Finding detail: evidence, CWE/CVE/CVSS/OWASP mapping, remediation guidance.
-- Scan history with new/recurring/remediated comparisons across repeated scans.
-- Remediation status tracking and HTML/PDF report export.
+- Evidence viewer with request/response details, CWE/CVE/CVSS/OWASP mapping, and remediation guidance.
+- Target management, discovery, scope selection, scan creation, and scan status tracking.
+- User account management for administrators, forced password change, self-service reset token flow, and account page.
+- Remediation status tracking plus CSV and Word-openable report export.
 
 ## Quality and safety checklist
 
@@ -137,11 +138,11 @@ Full checklist: [implementation plan §18](VulnVista_IMPLEMENTATION_PLAN.md#18-s
 
 Full checklist: [implementation plan §20](VulnVista_IMPLEMENTATION_PLAN.md#20-final-definition-of-project-done). Summary — the project is complete when:
 
-- [ ] All four approved lab targets are reachable in the isolated lab.
-- [ ] All fifteen detectors work and share a common schema.
-- [ ] Findings, evidence, severity, and confidence persist in PostgreSQL.
-- [ ] The dashboard presents findings, scan history, and remediation status.
-- [ ] Report export, Docker deployment, and CI/CD all work.
+- [x] All four approved lab targets are represented in the isolated lab setup.
+- [x] All fifteen detectors are implemented and share a common schema.
+- [x] Findings, evidence, severity, and confidence persist in PostgreSQL.
+- [x] The dashboard presents findings, scan history, evidence, and remediation status.
+- [x] CSV/DOC report export, Docker deployment, and CI/CD workflow are implemented.
 - [ ] Evaluation metrics (detection rate, false-positive/negative rate, repeatability) are calculated.
 - [ ] Documentation, academic report, and final demonstration are complete.
 
@@ -155,8 +156,8 @@ Full checklist: [implementation plan §20](VulnVista_IMPLEMENTATION_PLAN.md#20-f
 
 ## Project status
 
-**Current phase:** Week 1 — project foundation (monorepo, backend/frontend scaffolding, and Docker Compose persistence are in place; lab target deployment and the first detectors are next).
-**Overall progress:** M1 in progress, 0/15 detectors implemented.
+**Current phase:** Week 7 — validation and release-candidate hardening. The authenticated backend, React dashboard, Docker setup, CI workflow, target discovery/scope support, scan orchestration, persistence, reporting export, Bruno API collection, and all fifteen detector modules are implemented.
+**Overall progress:** M4/M5A complete, 15/15 detectors implemented. Remaining work is validation evidence, metrics, final documentation/report polish, and the Week 8 demonstration/submission package.
 
 ## Monorepo quickstart
 
@@ -174,26 +175,65 @@ architecture and roadmap.
 
 ### First run
 
+Before the first start, copy `.env.example` to `.env`, then set:
+
+- `DATABASE_URL` to the Neon pooled connection string using the `postgresql+asyncpg://` prefix and `?ssl=require`.
+- `SECRET_KEY` to a strong random value.
+- `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_EMAIL`, and `INITIAL_ADMIN_PASSWORD`.
+
+The backend applies Alembic migrations on startup and creates the initial admin
+account once; subsequent starts do not overwrite it.
+
 ```bash
 ./scripts/setup.sh        # creates ./storage, copies .env.example -> .env, creates the shared network
-docker compose up --build # starts postgres + backend + frontend
+docker compose up --build # starts backend + frontend; database is Neon
 ```
 
-- Backend API: <http://localhost:8000/api/health>
+- Backend API: <http://localhost:9000/api/health>
 - Frontend dashboard: <http://localhost:5173>
 
-### Persistent data
+Sign in with `INITIAL_ADMIN_USERNAME` (or `INITIAL_ADMIN_EMAIL`) and
+`INITIAL_ADMIN_PASSWORD`. Admins can create platform users through
+`POST /api/auth/users`; analysts can create targets and scans, while viewers have
+read-only access.
 
-All state lives on the host under `./storage/` (git-ignored), bind-mounted into the
-containers — **not** inside a container's writable layer or an opaque Docker-managed
-volume:
+### Database
 
-- `./storage/postgres` — the PostgreSQL data directory
+VulnVista now uses Neon as the primary PostgreSQL database. Use the pooled Neon
+connection string for the backend:
+
+```env
+DATABASE_URL=postgresql+asyncpg://USER:PASSWORD@ep-xxxx-pooler.REGION.aws.neon.tech/DBNAME?ssl=require
+```
+
+For one-off migration work outside the container, Neon recommends the direct
+non-pooler host. The container entrypoint runs `alembic upgrade head`
+automatically against `DATABASE_URL`; set `RUN_MIGRATIONS=0` if migrations are
+handled separately.
+
+### Local persistence
+
+Scan evidence and optional local lab state live on the host under `./storage/`
+(git-ignored), bind-mounted into the containers:
+
 - `./storage/uploads` — backend-collected scan evidence / uploaded files
 - `./storage/lab/juice-shop` — OWASP Juice Shop challenge/user state
 
-`docker compose down`, a host reboot, or `docker compose up` again all leave this data
-untouched. Only `docker compose down -v` or manually deleting `./storage` removes it.
+`docker compose down`, a host reboot, or `docker compose up` again all leave this
+data untouched. Only manually deleting `./storage` removes it.
+
+### Optional local database
+
+For offline/local-only development, start the bundled PostgreSQL container with
+the `local-db` profile and point `DATABASE_URL` at it:
+
+```bash
+DATABASE_URL=postgresql+asyncpg://vulnvista:change-me-in-dev@postgres:5432/vulnvista \
+  docker compose --profile local-db up --build
+```
+
+When the local profile is enabled, PostgreSQL data is stored under
+`./storage/postgres`.
 
 ### Lab targets
 
@@ -206,9 +246,8 @@ before starting either one:
 docker compose --env-file .env -f lab/docker-compose.yml up -d
 ```
 
-See [lab/README.md](lab/README.md) for target URLs/credentials and
-[lab/METASPLOITABLE.md](lab/METASPLOITABLE.md) for running Metasploitable2 as a VM
-(it has no official Docker image).
+See [lab/README.md](lab/README.md) for target URLs, credentials, and
+Metasploitable2 service-port mappings.
 
 ---
 

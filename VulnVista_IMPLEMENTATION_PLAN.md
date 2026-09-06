@@ -172,6 +172,20 @@ Suggested fields:
 - `created_at`
 - `updated_at`
 
+## 4.1A Discovery (delivered beyond the original scope)
+
+Represents one crawl of a `Target`, run ahead of a scan to propose which paths are actually in scope for the detectors to attack. Implemented as `backend/app/models/discovery.py`, `POST/GET /api/discoveries`, and rendered in the dashboard's Scope Tree (`frontend/src/components/ScopeTree.tsx`). A `Scan` carries the resolved scope forward from its `Discovery` so a detector profile switch doesn't silently re-run discovery.
+
+Fields:
+
+- `id`
+- `target_id`
+- `status`
+- `in_scope_paths`
+- `out_of_scope_paths`
+- `initiated_by`
+- `created_at`
+
 ## 4.2 Scan
 
 Represents one execution of selected detectors against a target.
@@ -293,17 +307,25 @@ vulnvista/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
-│   │   │   ├── auth.py          # login / token / user management
-│   │   │   └── ...
+│   │   │   ├── auth_deps.py     # request-time auth/role dependencies
+│   │   │   └── v1/
+│   │   │       ├── auth.py      # login / token / user management
+│   │   │       ├── targets.py
+│   │   │       ├── discoveries.py  # target crawl + scope proposal
+│   │   │       ├── scans.py
+│   │   │       └── findings.py
 │   │   ├── core/
 │   │   │   ├── security.py      # password hashing, JWT, deps
 │   │   │   └── ...
 │   │   ├── database/
 │   │   ├── models/
 │   │   │   ├── user.py          # platform account model
+│   │   │   ├── discovery.py     # crawl + scope proposal
 │   │   │   └── ...
 │   │   ├── schemas/
 │   │   ├── services/
+│   │   │   ├── discovery_runner.py
+│   │   │   └── ...
 │   │   ├── scanners/
 │   │   │   ├── base.py
 │   │   │   ├── sql_injection.py         # Sparsh
@@ -329,10 +351,19 @@ vulnvista/
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/
-│   │   │   ├── Login.tsx        # login screen
+│   │   │   ├── Login.tsx              # login screen
+│   │   │   ├── ForgotPassword.tsx     # password-reset request
+│   │   │   ├── ResetPassword.tsx      # password-reset completion
+│   │   │   ├── ForcedPasswordChange.tsx
+│   │   │   ├── Account.tsx
+│   │   │   ├── Users.tsx              # admin-only user management
 │   │   │   └── ...
 │   │   ├── components/
+│   │   │   └── ScopeTree.tsx    # discovery in-scope/out-of-scope path picker
+│   │   ├── auth/                # auth context/hook, protected-route wrapper
 │   │   ├── services/
+│   │   ├── lib/
+│   │   │   └── report.ts        # client-side CSV/Word findings export
 │   │   ├── hooks/
 │   │   └── types/
 │   ├── package.json
@@ -357,7 +388,7 @@ vulnvista/
 ├── docker-compose.yml
 ├── .env.example
 ├── README.md
-└── IMPLEMENTATION_PLAN.md
+└── VulnVista_IMPLEMENTATION_PLAN.md
 ```
 
 ---
@@ -378,19 +409,26 @@ VulnVista must sit behind a login so that only authorised operators can manage t
 
 ## Auth tasks
 
-- [ ] Add `User` model and migration.
-- [ ] Add password hashing utilities.
-- [ ] Add JWT creation/verification utilities.
-- [ ] Implement `POST /api/auth/login`.
-- [ ] Implement `POST /api/auth/logout` (or token invalidation strategy).
-- [ ] Implement `GET /api/auth/me`.
-- [ ] Implement `POST /api/auth/users` (admin-only user creation).
-- [ ] Add auth dependency to protect all non-public routes.
-- [ ] Enforce role checks on privileged endpoints.
-- [ ] Build frontend login page and auth context/hook.
-- [ ] Add protected-route wrapper and token storage handling.
-- [ ] Seed initial admin account from environment configuration.
-- [ ] Add auth unit/API tests (valid login, invalid login, expired token, role denial).
+- [x] Add `User` model and migration.
+- [x] Add password hashing utilities.
+- [x] Add JWT creation/verification utilities.
+- [x] Implement `POST /api/auth/login`.
+- [ ] Implement `POST /api/auth/logout` (or token invalidation strategy). — *Delivered as client-side token discard rather than a server-side invalidation endpoint.*
+- [x] Implement `GET /api/auth/me`.
+- [x] Implement `POST /api/auth/users` (admin-only user creation).
+- [x] Add auth dependency to protect all non-public routes. — *`app/api/auth_deps.py` (`require_operator`, etc.).*
+- [x] Enforce role checks on privileged endpoints.
+- [x] Build frontend login page and auth context/hook.
+- [x] Add protected-route wrapper and token storage handling.
+- [x] Seed initial admin account from environment configuration.
+- [x] Add auth unit/API tests (valid login, invalid login, expired token, role denial).
+
+**Delivered beyond the original scope:**
+
+- [x] Forced password change on first login (`ForcedPasswordChange.tsx`).
+- [x] Self-service password-reset token flow (`ForgotPassword.tsx`, `ResetPassword.tsx`).
+- [x] Account settings page for the signed-in user (`Account.tsx`).
+- [x] Admin user-management page beyond raw `POST /users` (`Users.tsx`).
 
 The auth system is scaffolded in **Week 1** and completed in **Week 2** so that every later feature is built behind it.
 
@@ -498,7 +536,7 @@ Build the technical foundation (including the platform login system) required by
 - [ ] Configure `uv` package management.
 - [ ] Initialise React + TypeScript frontend.
 - [ ] Configure Tailwind CSS.
-- [ ] Configure PostgreSQL.
+- [x] Configure PostgreSQL. — *Delivered on managed **Neon** Postgres (pooled `postgresql+asyncpg://` connection) rather than a local-only container; a local `postgres` container remains available behind an opt-in `local-db` Compose profile.*
 - [ ] Add SQLAlchemy.
 - [ ] Configure migrations.
 - [ ] Add environment configuration.
@@ -620,17 +658,18 @@ The detector consistently identifies the seeded DVWA SQL injection scenario and 
 
 ### Implementation Tasks
 
-- [ ] Identify command injection endpoint.
-- [ ] Establish baseline response.
-- [ ] Send harmless unique marker or controlled timing canary.
-- [ ] Confirm behavioural difference.
-- [ ] Prevent destructive operating-system commands.
-- [ ] Capture evidence.
-- [ ] Add severity/confidence.
-- [ ] Add CWE mapping.
-- [ ] Add remediation guidance.
-- [ ] Implement tests.
-- [ ] Integrate with shared schema.
+- [x] Identify command injection endpoint.
+- [x] Establish baseline response.
+- [x] Send harmless unique marker or controlled timing canary.
+- [x] Confirm behavioural difference.
+- [x] Prevent destructive operating-system commands.
+- [x] Capture evidence.
+- [x] Add severity/confidence.
+- [x] Add CWE mapping.
+- [x] Add remediation guidance.
+- [x] Implement tests.
+- [x] Integrate with shared schema.
+- [x] *(Beyond original scope)* Optional OWASP ZAP active-scan cross-check — when `ScanContext.extra['use_zap']` is set, the manual finding is corroborated (or noted as unavailable) against ZAP's own result via `combine_with_zap()`, without changing the manual probe's own logic.
 
 ### Acceptance Criteria
 
@@ -737,20 +776,20 @@ Weak authentication controls are demonstrated using synthetic accounts or approv
 ### Tasks
 
 - [ ] Obtain controlled laboratory JWT/session.
-- [ ] Parse JWT header and claims.
-- [ ] Check expiration claims.
-- [ ] Check important token properties.
+- [x] Parse JWT header and claims.
+- [x] Check expiration claims.
+- [x] Check important token properties.
 - [ ] Submit malformed token.
 - [ ] Submit expired test token where supported.
 - [ ] Test controlled token modification.
 - [ ] Verify invalid signatures are rejected.
-- [ ] Check session handling relevant to the target.
+- [x] Check session handling relevant to the target.
 - [ ] Never use real credentials/tokens.
-- [ ] Capture claims and responses safely.
-- [ ] Mask sensitive values in logs.
-- [ ] Add severity/confidence.
-- [ ] Add CWE/remediation.
-- [ ] Integrate detector.
+- [x] Capture claims and responses safely.
+- [x] Mask sensitive values in logs.
+- [x] Add severity/confidence.
+- [x] Add CWE/remediation.
+- [x] Integrate detector.
 
 ### Acceptance Criteria
 
@@ -1047,17 +1086,17 @@ The detector correctly identifies intentionally configured weak TLS characterist
 
 ### Tasks
 
-- [ ] Check security headers.
-- [ ] Check cookie security attributes.
+- [x] Check security headers.
+- [x] Check cookie security attributes.
 - [ ] Check exposed directory listing.
 - [ ] Check default pages.
 - [ ] Check debug/error-information leakage.
 - [ ] Check obviously unsafe exposed services.
-- [ ] Define each check separately.
-- [ ] Avoid reporting purely informational items as high severity.
-- [ ] Store individual evidence.
-- [ ] Add confidence/remediation.
-- [ ] Integrate detector.
+- [x] Define each check separately.
+- [x] Avoid reporting purely informational items as high severity.
+- [x] Store individual evidence.
+- [x] Add confidence/remediation.
+- [x] Integrate detector.
 
 ### Acceptance Criteria
 
@@ -1082,16 +1121,20 @@ The detector reports clearly defined configuration weaknesses with sufficient ev
 
 ### Reporting
 
-- [ ] Create report template.
-- [ ] Add target summary.
-- [ ] Add scan information.
-- [ ] Add severity summary.
-- [ ] Add detailed findings.
-- [ ] Add evidence summary.
-- [ ] Add CWE/CVE/CVSS references.
-- [ ] Add remediation.
-- [ ] Export HTML.
-- [ ] Export PDF if practical within schedule.
+> **Delivered format differs from the original plan:** rather than a backend-rendered HTML/PDF report, findings export is generated **client-side** in the dashboard (`frontend/src/lib/report.ts`) directly from the findings already loaded on screen — as CSV and a Word-openable (`.doc`) document. There is no `POST /reports/{scan_id}` backend endpoint.
+
+- [x] Create report template. — *`COLUMN_LABELS`/`COLUMNS` in `report.ts`.*
+- [ ] Add target summary. — *Not included; export is a per-finding table, not a target-level rollup.*
+- [ ] Add scan information. — *Not included at the report level (available separately via Scan Detail).*
+- [ ] Add severity summary. — *Not included; dashboard charts cover this instead.*
+- [x] Add detailed findings.
+- [x] Add evidence summary. — *`evidence_summary` column.*
+- [x] Add CWE/CVE/CVSS references.
+- [ ] Add remediation. — *Not currently a report column; visible on the Finding Detail page.*
+- [ ] Export HTML. — *Superseded by CSV/DOC export below.*
+- [ ] Export PDF if practical within schedule. — *Superseded by CSV/DOC export below.*
+- [x] Export CSV.
+- [x] Export Word-openable document (`.doc`).
 
 ### Dockerisation
 
@@ -1770,7 +1813,7 @@ The project is complete when:
 - [ ] File-upload detector works. *(Nischal)*
 - [ ] XSS detector works. *(Sparsh)*
 - [ ] Weak-authentication detector works. *(Sunil)*
-- [ ] JWT/session detector works. *(Nischal)*
+- [x] JWT/session detector works. *(Nischal)*
 - [ ] IDOR detector works. *(Sparsh)*
 - [ ] Sensitive-file exposure detector works. *(Sunil)*
 - [ ] Path traversal detector works. *(Nischal)*
@@ -1779,7 +1822,7 @@ The project is complete when:
 - [ ] CSRF detector works. *(Nischal)*
 - [ ] XXE detector works. *(Sparsh)*
 - [ ] Weak-TLS detector works. *(Sunil)*
-- [ ] Security-misconfiguration detector works. *(Nischal)*
+- [x] Security-misconfiguration detector works. *(Nischal)*
 - [ ] All detector outputs use a common schema.
 - [ ] Findings are stored in PostgreSQL.
 - [ ] Evidence is retained.

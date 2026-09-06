@@ -1,4 +1,4 @@
-# Core VulnVista app stack (postgres + backend + frontend).
+# Core VulnVista app stack (backend + frontend, with optional local Postgres).
 #
 # Attaches to the `vulnvista_net` network as `external: true` — this file does
 # not create it, so it doesn't fight lab/docker-compose.yml for ownership. Run
@@ -9,6 +9,10 @@ services:
     image: postgres:16-alpine
     container_name: vulnvista_postgres
     restart: unless-stopped
+    # Optional local database. Not started by default — the backend points at
+    # Neon (see DATABASE_URL in .env). Start it with `--profile local-db` for
+    # offline/local development.
+    profiles: ["local-db"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-vulnvista}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-dev}
@@ -38,24 +42,33 @@ services:
       dockerfile: Dockerfile
     container_name: vulnvista_backend
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
+    # No depends_on: the database is Neon (external). When running the local-db
+    # profile, start postgres first (or just `docker compose --profile local-db up`).
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       SECRET_KEY: ${SECRET_KEY:-change-me-generate-a-random-64-char-value}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      MAX_FAILED_LOGINS: ${MAX_FAILED_LOGINS:-5}
+      LOCKOUT_MINUTES: ${LOCKOUT_MINUTES:-15}
+      PASSWORD_RESET_TOKEN_TTL_MINUTES: ${PASSWORD_RESET_TOKEN_TTL_MINUTES:-30}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:-}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:5173}
       BACKEND_STORAGE_DIR: /data/uploads
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vulnvista}:${POSTGRES_PASSWORD:-change-me-in-dev}@postgres:5432/${POSTGRES_DB:-vulnvista}
+      # Taken from .env (Neon). Falls back to the local-db container if unset.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://vulnvista:change-me-in-dev@postgres:5432/vulnvista}
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-1}
       NVD_API_KEY: ${NVD_API_KEY:-}
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BACKEND_PORT:-9000}:9000"
     volumes:
       # Live-reload source mount for development.
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
       - ./backend/scripts:/app/scripts
+      - ./backend/alembic:/app/alembic
       # Scan evidence / uploaded files persisted on the host, not in the container layer.
       - ${BACKEND_STORAGE_DIR:-./storage/uploads}:/data/uploads
       
@@ -71,7 +84,7 @@ services:
     depends_on:
       - backend
     environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:9000/api}
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     volumes:
@@ -84,6 +97,8 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4
+    # Local DB UI — only relevant with the local-db profile.
+    profiles: ["local-db"]
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
       PGADMIN_DEFAULT_PASSWORD: admin
