@@ -19,7 +19,7 @@ Full per-vulnerability checklists live in the [implementation plan](VulnVista_IM
 | V7–V9 + M3A | Week 4 | + IDOR, sensitive files, path traversal; dashboard MVP | ✅ Complete |
 | V10–V12 + M3 | Week 5 | + SSRF, vulnerable services, CSRF; full dashboard workflows | ✅ Complete |
 | V13–V15 + M4/M5A | Week 6 | + XXE, weak TLS, security misconfiguration; integration, Docker, CI/CD | ✅ Complete |
-| M5 | Week 7 | Detector validation, accuracy checks, release-candidate hardening | 🟡 Current stage |
+| M5 | Week 7 | Detector validation, accuracy checks, release-candidate hardening | ✅ Complete |
 | M6 | Week 8 | Final delivery, report, demonstration | ⬜ Pending |
 
 ## What VulnVista does
