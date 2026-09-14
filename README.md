@@ -7,20 +7,22 @@ VulnVista detects, validates, stores, prioritises, and presents findings from in
 > [!CAUTION]
 > VulnVista is intended only for deliberately vulnerable applications in an isolated, pre-approved lab (DVWA, OWASP Juice Shop, Metasploitable2, a local TLS test service). Never use it to scan public, production, or third-party systems without explicit written authorization.
 
+![VulnVista security posture dashboard showing open findings, severity distribution, scan outcomes, and detector coverage](docs/screenshots/vulnvista-dashboard.jpg)
+
 ## Milestone tracker
 
 Full per-vulnerability checklists live in the [implementation plan](VulnVista_IMPLEMENTATION_PLAN.md#8-eight-week-implementation-roadmap). Summary:
 
-| Milestone | Target | Outcome | Status |
-| --- | --- | --- | --- |
-| M1 | Week 1 | Scope, architecture, and lab foundation | ✅ Complete |
-| V1–V3 + M2 | Week 2 | Core scan framework + SQL injection, command injection, file upload | ✅ Complete |
-| V4–V6 + M2B | Week 3 | + XSS, weak authentication, JWT/session | ✅ Complete |
-| V7–V9 + M3A | Week 4 | + IDOR, sensitive files, path traversal; dashboard MVP | ✅ Complete |
-| V10–V12 + M3 | Week 5 | + SSRF, vulnerable services, CSRF; full dashboard workflows | ✅ Complete |
+| Milestone        | Target | Outcome                                                                | Status      |
+| ---------------- | ------ | ---------------------------------------------------------------------- | ----------- |
+| M1               | Week 1 | Scope, architecture, and lab foundation                                | ✅ Complete |
+| V1–V3 + M2       | Week 2 | Core scan framework + SQL injection, command injection, file upload    | ✅ Complete |
+| V4–V6 + M2B      | Week 3 | + XSS, weak authentication, JWT/session                                | ✅ Complete |
+| V7–V9 + M3A      | Week 4 | + IDOR, sensitive files, path traversal; dashboard MVP                 | ✅ Complete |
+| V10–V12 + M3     | Week 5 | + SSRF, vulnerable services, CSRF; full dashboard workflows            | ✅ Complete |
 | V13–V15 + M4/M5A | Week 6 | + XXE, weak TLS, security misconfiguration; integration, Docker, CI/CD | ✅ Complete |
-| M5 | Week 7 | Detector validation, accuracy checks, release-candidate hardening | 🟡 Current stage |
-| M6 | Week 8 | Final delivery, report, demonstration | ⬜ Pending |
+| M5               | Week 7 | Detector validation, accuracy checks, release-candidate hardening      | ✅ Complete |
+| M6               | Week 8 | Final delivery, report, demonstration                                  | ✅ Complete |
 
 ## What VulnVista does
 
@@ -54,12 +56,12 @@ flowchart TD
 
 ## Approved lab targets
 
-| Target | Role | Setup |
-| --- | --- | --- |
-| DVWA | Adjustable-difficulty vulnerability exercises | [lab/docker-compose.yml](lab/docker-compose.yml) |
-| OWASP Juice Shop | Modern Node.js app covering the OWASP Top 10 | [lab/docker-compose.yml](lab/docker-compose.yml) |
-| Metasploitable2 | Known-vulnerable service catalogue | [lab/docker-compose.yml](lab/docker-compose.yml) community image with mapped service ports |
-| Local TLS test service | Weak TLS/certificate scenarios | [lab/tls-test/](lab/tls-test/) via [lab/docker-compose.yml](lab/docker-compose.yml) |
+| Target                 | Role                                          | Setup                                                                                      |
+| ---------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| DVWA                   | Adjustable-difficulty vulnerability exercises | [lab/docker-compose.yml](lab/docker-compose.yml)                                           |
+| OWASP Juice Shop       | Modern Node.js app covering the OWASP Top 10  | [lab/docker-compose.yml](lab/docker-compose.yml)                                           |
+| Metasploitable2        | Known-vulnerable service catalogue            | [lab/docker-compose.yml](lab/docker-compose.yml) community image with mapped service ports |
+| Local TLS test service | Weak TLS/certificate scenarios                | [lab/tls-test/](lab/tls-test/) via [lab/docker-compose.yml](lab/docker-compose.yml)        |
 
 All targets run on an isolated `vulnvista_net` Docker network with no route to production infrastructure. See [lab/README.md](lab/README.md) for URLs, default credentials, and safety controls.
 
@@ -284,14 +286,14 @@ OWASP ZAP provides optional secondary validation; it is not the engine behind ev
 
 ## Implementation stack
 
-| Layer | Technology |
-| --- | --- |
-| Backend | FastAPI, SQLAlchemy (async), Alembic, [uv](https://docs.astral.sh/uv/) |
-| Storage | PostgreSQL, bind-mounted to the host so data survives container restarts |
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS v4, react-router |
-| Detection engine | Python, one module per vulnerability category under `backend/app/scanners/` |
-| Deployment | Docker Compose (root stack + separate `lab/` compose for vulnerable targets) |
-| CI/CD | GitHub Actions — backend lint/test, frontend lint/build, Docker image builds |
+| Layer            | Technology                                                                   |
+| ---------------- | ---------------------------------------------------------------------------- |
+| Backend          | FastAPI, SQLAlchemy (async), Alembic, [uv](https://docs.astral.sh/uv/)       |
+| Storage          | PostgreSQL, bind-mounted to the host so data survives container restarts     |
+| Frontend         | React 19, TypeScript, Vite, Tailwind CSS v4, react-router                    |
+| Detection engine | Python, one module per vulnerability category under `backend/app/scanners/`  |
+| Deployment       | Docker Compose (root stack + separate `lab/` compose for vulnerable targets) |
+| CI/CD            | GitHub Actions — backend lint/test, frontend lint/build, Docker image builds |
 
 ## Shared finding schema
 
@@ -318,6 +320,24 @@ Evidence (HTTP request/response pairs, screenshots, TLS results, service banners
 - User account management for administrators, forced password change, self-service reset token flow, and account page.
 - Remediation status tracking plus CSV and Word-openable report export.
 
+### Screenshots
+
+**Sign in** — operator access with temporary lockout after repeated failed attempts.
+
+![VulnVista sign-in page](docs/screenshots/vulnvista-login.png)
+
+**Registered targets** — authorization-scoped target records with risk load, scan count, and last activity.
+
+![Registered targets page](docs/screenshots/vulnvista-target.png)
+
+**Finding detail** — a confirmed OS command injection with CVSS, CWE, OWASP mapping, remediation guidance, and probe timing evidence.
+
+![OS command injection finding detail](docs/screenshots/vulnvista-detection.png)
+
+**Evidence workspace** — stored detector evidence per finding, with observation history and workflow state.
+
+![Evidence workspace page](docs/screenshots/vulnvista-evidence.png)
+
 ## Quality and safety checklist
 
 - Detectors run only against the approved target allowlist — no arbitrary public hosts.
@@ -331,12 +351,12 @@ Full checklist: [implementation plan §18](VulnVista_IMPLEMENTATION_PLAN.md#18-s
 
 ## Standards and methodology
 
-| Area | Standard | Project use |
-| --- | --- | --- |
-| Vulnerability classes | OWASP Top 10 | Structures the detector catalogue and dashboard categories |
-| Weakness classification | CWE | Attached to each finding where applicable |
-| Known-vulnerability tracking | CVE | Attached to vulnerable-service findings |
-| Technical severity | CVSS v3.1 | Consistent severity baseline where a score applies |
+| Area                         | Standard     | Project use                                                |
+| ---------------------------- | ------------ | ---------------------------------------------------------- |
+| Vulnerability classes        | OWASP Top 10 | Structures the detector catalogue and dashboard categories |
+| Weakness classification      | CWE          | Attached to each finding where applicable                  |
+| Known-vulnerability tracking | CVE          | Attached to vulnerable-service findings                    |
+| Technical severity           | CVSS v3.1    | Consistent severity baseline where a score applies         |
 
 ## Definition of done
 
